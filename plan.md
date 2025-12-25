@@ -72,9 +72,14 @@ git push -u origin main
      lib/
      ├── heygen/
      ├── openai/
+     ├── hooks/
      └── stores/
      config/
+     test/
      ```
+
+   **Note on Directory Structure:**
+   This plan uses `lib/` to contain stores and hooks, following a common Next.js pattern where `lib/` houses reusable library code. An alternative modern convention is to use top-level `hooks/`, `stores/`, or `components/` directories. Both approaches are valid - choose based on team preference. This plan maintains consistency with the `lib/` pattern throughout.
 
 4. **Set Up Environment Variables**
    - Create `.env.local` (add to `.gitignore`)
@@ -91,12 +96,54 @@ git push -u origin main
    - Update `tailwind.config.ts` with dark mode settings
    - Set up base dark mode styles in `globals.css`
 
+7. **Set Up Testing Framework**
+   - Install testing dependencies:
+     ```bash
+     pnpm add -D vitest @testing-library/react @testing-library/jest-dom jsdom
+     ```
+   - Create `vitest.config.ts`:
+     ```typescript
+     import { defineConfig } from 'vitest/config'
+     import react from '@vitejs/plugin-react'
+     import path from 'path'
+
+     export default defineConfig({
+       plugins: [react()],
+       test: {
+         environment: 'jsdom',
+         globals: true,
+         setupFiles: ['./test/setup.ts'],
+       },
+       resolve: {
+         alias: {
+           '@': path.resolve(__dirname, './'),
+         },
+       },
+     })
+     ```
+   - Create `test/setup.ts`:
+     ```typescript
+     import '@testing-library/jest-dom'
+     ```
+   - Add test scripts to `package.json`:
+     ```json
+     {
+       "scripts": {
+         "test": "vitest",
+         "test:watch": "vitest --watch",
+         "test:coverage": "vitest --coverage"
+       }
+     }
+     ```
+
 #### Tests
 
 - [ ] `pnpm dev` starts development server successfully
 - [ ] Navigate to `http://localhost:3000` shows default Next.js page
 - [ ] Environment variables load correctly (verify with console.log)
 - [ ] Dark mode styling appears correctly
+- [ ] `pnpm test` runs successfully (even with no tests yet)
+- [ ] Testing framework configured correctly
 
 #### Code Review Checkpoint
 
@@ -119,7 +166,8 @@ git commit -m "feat: Initialize Next.js project with dependencies and config
 - Create project directory structure
 - Configure environment variables template
 - Set up avatar configuration file
-- Configure dark mode styling"
+- Configure dark mode styling
+- Set up Vitest testing framework with React Testing Library"
 
 git push origin feature/project-setup
 ```

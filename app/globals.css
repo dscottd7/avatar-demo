@@ -50,4 +50,16 @@ body {
   .message-assistant {
     @apply bg-gray-800/50 border-gray-700/50 rounded-lg p-3 mb-2;
   }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-gray-800 rounded-lg;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-gray-600 rounded-lg hover:bg-gray-500;
+  }
 }

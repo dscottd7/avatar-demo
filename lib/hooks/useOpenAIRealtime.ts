@@ -63,7 +63,7 @@ export function useOpenAIRealtime(config: UseOpenAIRealtimeConfig): UseOpenAIRea
 
       // Create session configuration based on avatar config
       const sessionConfig: Partial<SessionConfig> = {
-        type: 'session', // Required by OpenAI Realtime API
+        type: 'realtime', // Required by OpenAI Realtime API - 'realtime' for voice conversations
         modalities: ['text', 'audio'],
         instructions: avatarConfig.instructions || 'You are a helpful AI assistant.',
         voice: avatarConfig.voice as 'alloy' | 'echo' | 'shimmer' || 'alloy',

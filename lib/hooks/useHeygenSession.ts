@@ -42,6 +42,18 @@ export function useHeygenSession(): UseHeygenSessionReturn {
 
       console.log('[LiveAvatar] Starting session...');
 
+      // Check for and cleanup any orphaned session from localStorage
+      const orphanedSessionId = localStorage.getItem('liveavatar_session_id');
+      if (orphanedSessionId) {
+        console.log('[LiveAvatar] Found orphaned session, cleaning up:', orphanedSessionId);
+        await fetch('/api/stop-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: orphanedSessionId }),
+        }).catch(err => console.error('[LiveAvatar] Failed to cleanup orphaned session:', err));
+        localStorage.removeItem('liveavatar_session_id');
+      }
+
       // Get session token from backend API route
       const response = await fetch('/api/start-session', {
         method: 'POST',
@@ -121,8 +133,9 @@ export function useHeygenSession(): UseHeygenSessionReturn {
       // Start the session
       await session.start();
 
-      // Store session ID for cleanup
+      // Store session ID for cleanup (both in ref and localStorage)
       sessionIdRef.current = sessionData.session_id;
+      localStorage.setItem('liveavatar_session_id', sessionData.session_id);
       setHeygenSession(sessionData.session_id);
 
       console.log('[LiveAvatar] Session started successfully');
@@ -167,6 +180,7 @@ export function useHeygenSession(): UseHeygenSessionReturn {
         }
 
         sessionIdRef.current = null;
+        localStorage.removeItem('liveavatar_session_id');
       }
 
       setHeygenConnected(false);

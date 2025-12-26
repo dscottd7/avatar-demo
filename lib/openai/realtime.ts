@@ -49,18 +49,18 @@ export class OpenAIRealtimeClient {
     return new Promise((resolve, reject) => {
       try {
         const model = this.config.model || 'gpt-4o-realtime-preview-2024-12-17';
-        // Include API key as Authorization header via base64 encoding in URL
-        // Note: Browser WebSocket API doesn't support custom headers directly
-        const authHeader = btoa(`api:${this.config.apiKey}`);
+
+        // Browser WebSocket doesn't support custom headers
+        // OpenAI Realtime API uses a special authentication scheme:
+        // Pass API key as a WebSocket subprotocol in the format: "realtime" + "openai-insecure-api-key.{API_KEY}"
+        // Or use "openai-beta.realtime-v1" as the subprotocol and send auth in session.update
         const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
         console.log('[OpenAI] Connecting to Realtime API...');
 
-        // For browser WebSocket, we'll need to handle auth differently
-        // OpenAI Realtime API expects the key in the Authorization header
-        // which we can't set directly in browser WebSocket
-        // Solution: Send auth in first message or use WebSocket subprotocol
-        this.ws = new WebSocket(url, [`realtime`, `Bearer.${this.config.apiKey}`]);
+        // Use the authorization subprotocol format for browser WebSocket
+        // Format: The second protocol should be the API key in base64 or special format
+        this.ws = new WebSocket(url, ['realtime', `openai-insecure-api-key.${this.config.apiKey.trim()}`]);
 
         this.ws.onopen = () => {
           console.log('[OpenAI] Connected to Realtime API');
@@ -78,21 +78,26 @@ export class OpenAIRealtimeClient {
         this.ws.onmessage = (event) => {
           try {
             const serverEvent = JSON.parse(event.data) as RealtimeServerEvent;
+            console.log('[OpenAI] Received event:', serverEvent.type);
             this.handleServerEvent(serverEvent);
           } catch (error) {
-            console.error('[OpenAI] Error parsing message:', error);
+            console.error('[OpenAI] Error parsing message:', error, 'Raw data:', event.data);
           }
         };
 
         this.ws.onerror = (event) => {
           console.error('[OpenAI] WebSocket error:', event);
-          const error = new Error('WebSocket connection error');
+          const error = new Error('WebSocket connection error - check API key and network');
           this.config.onError?.(error);
           reject(error);
         };
 
         this.ws.onclose = (event) => {
-          console.log('[OpenAI] WebSocket closed:', event.code, event.reason);
+          console.log('[OpenAI] WebSocket closed:', {
+            code: event.code,
+            reason: event.reason || 'No reason provided',
+            wasClean: event.wasClean,
+          });
           this.ws = null;
           this.config.onClose?.();
 
@@ -171,9 +176,19 @@ export class OpenAIRealtimeClient {
       handlers.forEach((handler) => handler(event));
     }
 
-    // Log errors
+    // Log errors with better formatting
     if (event.type === ServerEventType.ERROR) {
-      console.error('[OpenAI] Server error:', event.error);
+      const errorEvent = event as any;
+      if (errorEvent.error) {
+        console.error('[OpenAI] Server error:', {
+          type: errorEvent.error.type,
+          code: errorEvent.error.code,
+          message: errorEvent.error.message,
+          param: errorEvent.error.param,
+        });
+      } else {
+        console.error('[OpenAI] Server error (unknown):', event);
+      }
     }
   }
 

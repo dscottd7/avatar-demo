@@ -196,9 +196,16 @@ export function useOpenAIRealtime(config: UseOpenAIRealtimeConfig): UseOpenAIRea
 
     // Handle errors
     client.on(ServerEventType.ERROR, (event: any) => {
-      console.error('[OpenAI Hook] Server error:', event.error);
-      setError(event.error.message);
-      setStoreError(event.error.message);
+      const errorMsg = event.error?.message || 'Unknown OpenAI error';
+      const errorDetails = event.error ? {
+        type: event.error.type,
+        code: event.error.code,
+        message: event.error.message,
+      } : event;
+
+      console.error('[OpenAI Hook] Server error:', errorDetails);
+      setError(errorMsg);
+      setStoreError(errorMsg);
     });
   }, [addMessage, config, setUserTalking, setStoreError]);
 

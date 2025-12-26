@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useHeygenSession } from '../useHeygenSession';
 import { useAppStore } from '@/lib/stores/useAppStore';
@@ -46,10 +46,33 @@ vi.mock('@heygen/liveavatar-web-sdk', () => ({
 // Mock fetch
 global.fetch = vi.fn();
 
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => {
+      store[key] = value.toString();
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+  };
+})();
+
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock,
+});
+
 describe('useHeygenSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession = createMockSession();
+    localStorageMock.clear();
 
     act(() => {
       useAppStore.getState().resetSession();
@@ -65,6 +88,10 @@ describe('useHeygenSession', () => {
         },
       }),
     });
+  });
+
+  afterEach(() => {
+    localStorageMock.clear();
   });
 
   it('initializes with default values', () => {
@@ -85,104 +112,228 @@ describe('useHeygenSession', () => {
     expect(typeof result.current.interrupt).toBe('function');
   });
 
-  it('fetches session token from API route on startSession', async () => {
-    const { result } = renderHook(() => useHeygenSession());
+  describe('Session Lifecycle', () => {
+    it('fetches session token from API route on startSession', async () => {
+      const { result } = renderHook(() => useHeygenSession());
 
-    await act(async () => {
-      await result.current.startSession();
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      expect(global.fetch).toHaveBeenCalledWith('/api/start-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
     });
 
-    expect(global.fetch).toHaveBeenCalledWith('/api/start-session', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    it('sets up event listeners when session starts', async () => {
+      const { result } = renderHook(() => useHeygenSession());
+
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      expect(mockSession.on).toHaveBeenCalledWith('session.state_changed', expect.any(Function));
+      expect(mockSession.on).toHaveBeenCalledWith('session.stream_ready', expect.any(Function));
+      expect(mockSession.on).toHaveBeenCalledWith('avatar.speak_started', expect.any(Function));
+      expect(mockSession.on).toHaveBeenCalledWith('avatar.speak_ended', expect.any(Function));
+      expect(mockSession.on).toHaveBeenCalledWith('session.disconnected', expect.any(Function));
+    });
+
+    it('updates store with session ID', async () => {
+      const { result } = renderHook(() => useHeygenSession());
+
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      const storeState = useAppStore.getState();
+      expect(storeState.heygenSessionId).toBe('test-session-id');
+    });
+
+    it('handles API errors gracefully', async () => {
+      (global.fetch as any).mockResolvedValueOnce({
+        ok: false,
+        statusText: 'Server Error',
+      });
+
+      const { result } = renderHook(() => useHeygenSession());
+
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      expect(result.current.error).toBeTruthy();
+      expect(result.current.error).toContain('Failed to start session');
+    });
+
+    it('calls SDK stop and API stop-session on stopSession', async () => {
+      const { result } = renderHook(() => useHeygenSession());
+
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      vi.clearAllMocks();
+
+      await act(async () => {
+        await result.current.stopSession();
+      });
+
+      expect(mockSession.stop).toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledWith('/api/stop-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ session_id: 'test-session-id' }),
+      });
+    });
+
+    it('clears session from store on stopSession', async () => {
+      const { result } = renderHook(() => useHeygenSession());
+
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      await act(async () => {
+        await result.current.stopSession();
+      });
+
+      const storeState = useAppStore.getState();
+      expect(storeState.heygenSessionId).toBeNull();
     });
   });
 
-  it('sets up event listeners when session starts', async () => {
-    const { result } = renderHook(() => useHeygenSession());
+  describe('localStorage Session Tracking', () => {
+    it('stores session ID in localStorage when session starts', async () => {
+      const { result } = renderHook(() => useHeygenSession());
 
-    await act(async () => {
-      await result.current.startSession();
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      expect(localStorage.getItem('liveavatar_session_id')).toBe('test-session-id');
     });
 
-    expect(mockSession.on).toHaveBeenCalledWith('session.state_changed', expect.any(Function));
-    expect(mockSession.on).toHaveBeenCalledWith('session.stream_ready', expect.any(Function));
-    expect(mockSession.on).toHaveBeenCalledWith('avatar.speak_started', expect.any(Function));
-    expect(mockSession.on).toHaveBeenCalledWith('avatar.speak_ended', expect.any(Function));
-    expect(mockSession.on).toHaveBeenCalledWith('session.disconnected', expect.any(Function));
+    it('removes session ID from localStorage when session stops', async () => {
+      const { result } = renderHook(() => useHeygenSession());
+
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      expect(localStorage.getItem('liveavatar_session_id')).toBe('test-session-id');
+
+      await act(async () => {
+        await result.current.stopSession();
+      });
+
+      expect(localStorage.getItem('liveavatar_session_id')).toBeNull();
+    });
+
+    it('cleans up orphaned session from localStorage on startup', async () => {
+      // Simulate an orphaned session
+      localStorage.setItem('liveavatar_session_id', 'orphaned-session-id');
+
+      const { result } = renderHook(() => useHeygenSession());
+
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      // Should call stop-session for orphaned session
+      expect(global.fetch).toHaveBeenCalledWith('/api/stop-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ session_id: 'orphaned-session-id' }),
+      });
+
+      // Should store new session ID
+      expect(localStorage.getItem('liveavatar_session_id')).toBe('test-session-id');
+    });
+
+    it('continues even if orphaned session cleanup fails', async () => {
+      localStorage.setItem('liveavatar_session_id', 'orphaned-session-id');
+
+      // Mock fetch to fail for stop-session but succeed for start-session
+      (global.fetch as any).mockImplementation((url: string) => {
+        if (url === '/api/stop-session') {
+          return Promise.reject(new Error('Network error'));
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            data: {
+              session_id: 'test-session-id',
+              session_token: 'test-token',
+            },
+          }),
+        });
+      });
+
+      const { result } = renderHook(() => useHeygenSession());
+
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      // Should still start new session
+      expect(localStorage.getItem('liveavatar_session_id')).toBe('test-session-id');
+      expect(result.current.error).toBeNull();
+    });
   });
 
-  it('updates store with session ID', async () => {
-    const { result } = renderHook(() => useHeygenSession());
+  describe('Avatar Control', () => {
+    it('calls repeat with text parameter', async () => {
+      const { result } = renderHook(() => useHeygenSession());
 
-    await act(async () => {
-      await result.current.startSession();
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      act(() => {
+        result.current.speak('Hello world');
+      });
+
+      expect(mockSession.repeat).toHaveBeenCalledWith('Hello world');
     });
 
-    const storeState = useAppStore.getState();
-    expect(storeState.heygenSessionId).toBe('test-session-id');
-  });
+    it('throws error when speaking without initialized session', () => {
+      const { result } = renderHook(() => useHeygenSession());
 
-  it('handles API errors gracefully', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: false,
-      statusText: 'Server Error',
+      expect(() => result.current.speak('Hello')).toThrow('LiveAvatar session not initialized');
     });
 
-    const { result } = renderHook(() => useHeygenSession());
+    it('calls interrupt on the session', async () => {
+      const { result } = renderHook(() => useHeygenSession());
 
-    await act(async () => {
-      await result.current.startSession();
+      await act(async () => {
+        await result.current.startSession();
+      });
+
+      act(() => {
+        result.current.interrupt();
+      });
+
+      expect(mockSession.interrupt).toHaveBeenCalled();
     });
 
-    expect(result.current.error).toBeTruthy();
-    expect(result.current.error).toContain('Failed to start session');
-  });
+    it('handles interrupt when session not started', () => {
+      const { result } = renderHook(() => useHeygenSession());
 
-  it('calls repeat with text parameter', async () => {
-    const { result } = renderHook(() => useHeygenSession());
+      // Should not throw, just do nothing
+      act(() => {
+        result.current.interrupt();
+      });
 
-    await act(async () => {
-      await result.current.startSession();
+      expect(mockSession.interrupt).not.toHaveBeenCalled();
     });
-
-    act(() => {
-      result.current.speak('Hello world');
-    });
-
-    expect(mockSession.repeat).toHaveBeenCalledWith('Hello world');
-  });
-
-  it('throws error when speaking without initialized session', () => {
-    const { result } = renderHook(() => useHeygenSession());
-
-    expect(() => result.current.speak('Hello')).toThrow('LiveAvatar session not initialized');
-  });
-
-  it('calls interrupt on the session', async () => {
-    const { result } = renderHook(() => useHeygenSession());
-
-    await act(async () => {
-      await result.current.startSession();
-    });
-
-    act(() => {
-      result.current.interrupt();
-    });
-
-    expect(mockSession.interrupt).toHaveBeenCalled();
-  });
-
-  it('handles interrupt when session not started', () => {
-    const { result } = renderHook(() => useHeygenSession());
-
-    // Should not throw, just do nothing
-    act(() => {
-      result.current.interrupt();
-    });
-
-    expect(mockSession.interrupt).not.toHaveBeenCalled();
   });
 });

@@ -4,25 +4,25 @@ import { useRef, useEffect } from 'react';
 
 interface AvatarVideoProps {
   sessionActive: boolean;
-  mediaStream: MediaStream | null;
   isConnecting: boolean;
+  isStreamReady: boolean;
+  onVideoReady?: (videoElement: HTMLVideoElement) => void;
 }
 
-export default function AvatarVideo({ sessionActive, mediaStream, isConnecting }: AvatarVideoProps) {
+export default function AvatarVideo({
+  sessionActive,
+  isConnecting,
+  isStreamReady,
+  onVideoReady
+}: AvatarVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current && mediaStream) {
-      videoRef.current.srcObject = mediaStream;
-      console.log('[AvatarVideo] Media stream attached to video element');
+    if (videoRef.current && onVideoReady) {
+      onVideoReady(videoRef.current);
+      console.log('[AvatarVideo] Video element registered with hook');
     }
-
-    return () => {
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    };
-  }, [mediaStream]);
+  }, [onVideoReady]);
 
   return (
     <div className="w-full max-w-4xl mx-auto">
@@ -35,7 +35,7 @@ export default function AvatarVideo({ sessionActive, mediaStream, isConnecting }
           muted={false}
         />
 
-        {(!sessionActive || isConnecting || !mediaStream) && (
+        {(!sessionActive || isConnecting || !isStreamReady) && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm">
             <div className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse" />

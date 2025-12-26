@@ -16,7 +16,8 @@ interface UseHeygenSessionReturn {
   stopSession: () => Promise<void>;
   speak: (text: string) => void;
   interrupt: () => void;
-  mediaStream: MediaStream | null;
+  attachVideo: (videoElement: HTMLVideoElement) => void;
+  isStreamReady: boolean;
 }
 
 export function useHeygenSession(): UseHeygenSessionReturn {
@@ -25,7 +26,7 @@ export function useHeygenSession(): UseHeygenSessionReturn {
   const sessionIdRef = useRef<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
+  const [isStreamReady, setIsStreamReady] = useState(false);
 
   const setHeygenSession = useAppStore((state) => state.setHeygenSession);
   const setHeygenConnected = useAppStore((state) => state.setHeygenConnected);
@@ -86,7 +87,7 @@ export function useHeygenSession(): UseHeygenSessionReturn {
           case SessionState.DISCONNECTED:
             setHeygenConnected(false);
             setSessionState('disconnected');
-            setMediaStream(null);
+            setIsStreamReady(false);
             break;
           case SessionState.CONNECTING:
             setSessionState('connecting');
@@ -96,20 +97,12 @@ export function useHeygenSession(): UseHeygenSessionReturn {
 
       session.on(SessionEvent.SESSION_STREAM_READY, () => {
         console.log('[LiveAvatar] Stream ready');
+        setIsStreamReady(true);
 
-        // Create a video element to attach the stream
-        if (!videoElementRef.current) {
-          videoElementRef.current = document.createElement('video');
-          videoElementRef.current.autoplay = true;
-          videoElementRef.current.playsInline = true;
-        }
-
-        // Attach the session to the video element
-        session.attach(videoElementRef.current);
-
-        // Get the media stream from the video element
-        if (videoElementRef.current.srcObject instanceof MediaStream) {
-          setMediaStream(videoElementRef.current.srcObject);
+        // If a video element has already been attached, attach the stream to it
+        if (videoElementRef.current) {
+          console.log('[LiveAvatar] Attaching stream to video element');
+          session.attach(videoElementRef.current);
         }
       });
 
@@ -127,7 +120,7 @@ export function useHeygenSession(): UseHeygenSessionReturn {
         console.log('[LiveAvatar] Session disconnected:', reason);
         setHeygenConnected(false);
         setSessionState('disconnected');
-        setMediaStream(null);
+        setIsStreamReady(false);
       });
 
       // Start the session
@@ -158,7 +151,7 @@ export function useHeygenSession(): UseHeygenSessionReturn {
         await sessionRef.current.stop();
         sessionRef.current = null;
         videoElementRef.current = null;
-        setMediaStream(null);
+        setIsStreamReady(false);
         console.log('[LiveAvatar] Client session stopped');
       }
 
@@ -213,6 +206,17 @@ export function useHeygenSession(): UseHeygenSessionReturn {
     }
   }, []);
 
+  const attachVideo = useCallback((videoElement: HTMLVideoElement) => {
+    videoElementRef.current = videoElement;
+    console.log('[LiveAvatar] Video element registered');
+
+    // If stream is already ready, attach immediately
+    if (sessionRef.current && isStreamReady) {
+      console.log('[LiveAvatar] Stream already ready, attaching to video');
+      sessionRef.current.attach(videoElement);
+    }
+  }, [isStreamReady]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -258,6 +262,7 @@ export function useHeygenSession(): UseHeygenSessionReturn {
     stopSession,
     speak,
     interrupt,
-    mediaStream,
+    attachVideo,
+    isStreamReady,
   };
 }

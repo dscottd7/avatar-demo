@@ -21,7 +21,8 @@ export default function Home() {
     interrupt,
     isConnecting,
     error: heygenError,
-    mediaStream,
+    attachVideo,
+    isStreamReady,
   } = useHeygenSession();
 
   const handleStartSession = async () => {
@@ -92,8 +93,9 @@ export default function Home() {
         {/* Avatar Video */}
         <AvatarVideo
           sessionActive={sessionActive}
-          mediaStream={mediaStream}
           isConnecting={isConnecting}
+          isStreamReady={isStreamReady}
+          onVideoReady={attachVideo}
         />
 
         {/* Chat History */}
@@ -102,7 +104,7 @@ export default function Home() {
         {/* Text Input */}
         <TextInput
           onSend={handleSendMessage}
-          disabled={isConnecting || !mediaStream}
+          disabled={isConnecting || !isStreamReady}
         />
 
         {/* Control Panel */}

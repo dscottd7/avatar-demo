@@ -100,7 +100,7 @@ describe('useHeygenSession', () => {
     expect(result.current.session).toBeNull();
     expect(result.current.isConnecting).toBe(false);
     expect(result.current.error).toBeNull();
-    expect(result.current.mediaStream).toBeNull();
+    expect(result.current.isStreamReady).toBe(false);
   });
 
   it('exposes session control functions', () => {
@@ -110,6 +110,7 @@ describe('useHeygenSession', () => {
     expect(typeof result.current.stopSession).toBe('function');
     expect(typeof result.current.speak).toBe('function');
     expect(typeof result.current.interrupt).toBe('function');
+    expect(typeof result.current.attachVideo).toBe('function');
   });
 
   describe('Session Lifecycle', () => {

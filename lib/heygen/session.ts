@@ -5,7 +5,7 @@ import type {
   HeyGenKeepAliveResponse,
 } from './types';
 
-const HEYGEN_API_BASE_URL = 'https://api.heygen.com/v1/streaming';
+const HEYGEN_API_BASE_URL = 'https://api.heygen.com/v1';
 
 /**
  * Creates a new HeyGen streaming session
@@ -26,7 +26,7 @@ export async function createHeyGenSession(
     avatar_id: avatarId,
   };
 
-  const response = await fetch(`${HEYGEN_API_BASE_URL}/new`, {
+  const response = await fetch(`${HEYGEN_API_BASE_URL}/streaming.new`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -68,7 +68,7 @@ export async function stopHeyGenSession(
     throw new Error('HEYGEN_API_KEY is not configured');
   }
 
-  const response = await fetch(`${HEYGEN_API_BASE_URL}/stop`, {
+  const response = await fetch(`${HEYGEN_API_BASE_URL}/streaming.stop`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -104,7 +104,7 @@ export async function keepHeyGenSessionAlive(
     throw new Error('HEYGEN_API_KEY is not configured');
   }
 
-  const response = await fetch(`${HEYGEN_API_BASE_URL}/ice`, {
+  const response = await fetch(`${HEYGEN_API_BASE_URL}/streaming.ice`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

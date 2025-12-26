@@ -5,7 +5,6 @@ import StreamingAvatar, {
   TaskType,
 } from '@heygen/streaming-avatar';
 import { useAppStore } from '@/lib/stores/useAppStore';
-import { createHeyGenSession } from '@/lib/heygen/session';
 import { avatarConfig } from '@/config/avatar.config';
 
 interface UseHeygenSessionReturn {
@@ -38,8 +37,19 @@ export function useHeygenSession(): UseHeygenSessionReturn {
       setError(null);
       setStoreError(null);
 
-      // Get session token from backend
-      const sessionData = await createHeyGenSession(avatarConfig.avatarId);
+      // Get session token from backend API route
+      const response = await fetch('/api/start-session', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to start session: ${response.statusText}`);
+      }
+
+      const { data: sessionData } = await response.json();
 
       // Initialize StreamingAvatar with token
       const avatar = new StreamingAvatar({ token: sessionData.session_token });

@@ -5,10 +5,10 @@ import type {
   HeyGenKeepAliveResponse,
 } from './types';
 
-const HEYGEN_API_BASE_URL = 'https://api.heygen.com/v1';
+const LIVEAVATAR_API_BASE_URL = 'https://api.liveavatar.com/v1';
 
 /**
- * Creates a new HeyGen streaming session
+ * Creates a new HeyGen LiveAvatar streaming session
  * @param avatarId - The ID of the HeyGen avatar to use
  * @returns Session token and connection details
  */
@@ -26,11 +26,11 @@ export async function createHeyGenSession(
     avatar_id: avatarId,
   };
 
-  const response = await fetch(`${HEYGEN_API_BASE_URL}/streaming.new`, {
+  const response = await fetch(`${LIVEAVATAR_API_BASE_URL}/sessions/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Api-Key': apiKey,
+      'x-api-key': apiKey,
     },
     body: JSON.stringify(requestBody),
   });
@@ -68,11 +68,11 @@ export async function stopHeyGenSession(
     throw new Error('HEYGEN_API_KEY is not configured');
   }
 
-  const response = await fetch(`${HEYGEN_API_BASE_URL}/streaming.stop`, {
+  const response = await fetch(`${LIVEAVATAR_API_BASE_URL}/sessions/stop`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Api-Key': apiKey,
+      'x-api-key': apiKey,
     },
     body: JSON.stringify({ session_id: sessionId }),
   });
@@ -104,11 +104,11 @@ export async function keepHeyGenSessionAlive(
     throw new Error('HEYGEN_API_KEY is not configured');
   }
 
-  const response = await fetch(`${HEYGEN_API_BASE_URL}/streaming.ice`, {
+  const response = await fetch(`${LIVEAVATAR_API_BASE_URL}/sessions/keep-alive`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Api-Key': apiKey,
+      'x-api-key': apiKey,
     },
     body: JSON.stringify({ session_id: sessionId }),
   });

@@ -44,16 +44,21 @@ export enum ServerEventType {
   RATE_LIMITS_UPDATED = 'rate_limits.updated',
 }
 
-// Session configuration
+// Session configuration (updated for 2025 API)
 export interface SessionConfig {
   type?: 'realtime' | 'transcription'; // Required by OpenAI API - 'realtime' for voice conversations
-  modalities?: ('text' | 'audio')[];
+  model?: string; // e.g., 'gpt-realtime-2025-08-25'
+  output_modalities?: ('text' | 'audio')[]; // Changed from 'modalities' to 'output_modalities'
   instructions?: string;
-  voice?: 'alloy' | 'echo' | 'shimmer';
-  input_audio_format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
-  output_audio_format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
-  input_audio_transcription?: {
-    model?: 'whisper-1';
+  voice?: 'alloy' | 'echo' | 'shimmer' | 'fable' | 'onyx' | 'nova';
+  audio?: {
+    input_audio_format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
+    output_audio_format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
+    input_audio_transcription?: {
+      model?: 'whisper-1';
+    };
+    speed?: number;
+    noise_reduction?: boolean;
   };
   turn_detection?: {
     type: 'server_vad';
@@ -69,7 +74,8 @@ export interface SessionConfig {
   }>;
   tool_choice?: 'auto' | 'none' | 'required';
   temperature?: number;
-  max_response_output_tokens?: number | 'inf';
+  max_output_tokens?: number | 'inf'; // Changed from max_response_output_tokens
+  truncation?: 'auto' | 'disabled';
 }
 
 // Message types
@@ -104,10 +110,13 @@ export interface InputAudioBufferCommitEvent {
 export interface ResponseCreateEvent {
   type: ClientEventType.RESPONSE_CREATE;
   response?: {
-    modalities?: ('text' | 'audio')[];
+    output_modalities?: ('text' | 'audio')[]; // Changed from 'modalities'
     instructions?: string;
-    voice?: 'alloy' | 'echo' | 'shimmer';
-    output_audio_format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
+    voice?: 'alloy' | 'echo' | 'shimmer' | 'fable' | 'onyx' | 'nova';
+    audio?: {
+      output_audio_format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
+      speed?: number;
+    };
     tools?: Array<any>;
     tool_choice?: string;
     temperature?: number;

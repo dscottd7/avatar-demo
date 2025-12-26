@@ -61,16 +61,18 @@ export function useOpenAIRealtime(config: UseOpenAIRealtimeConfig): UseOpenAIRea
 
       console.log('[OpenAI Hook] Initializing OpenAI Realtime client...');
 
-      // Create session configuration based on avatar config
+      // Create session configuration based on avatar config (2025 API structure)
       const sessionConfig: Partial<SessionConfig> = {
         type: 'realtime', // Required by OpenAI Realtime API - 'realtime' for voice conversations
-        modalities: ['text', 'audio'],
+        output_modalities: ['text', 'audio'], // Changed from 'modalities' to 'output_modalities'
         instructions: avatarConfig.instructions || 'You are a helpful AI assistant.',
         voice: avatarConfig.voice as 'alloy' | 'echo' | 'shimmer' || 'alloy',
-        input_audio_format: 'pcm16',
-        output_audio_format: 'pcm16',
-        input_audio_transcription: {
-          model: 'whisper-1',
+        audio: {
+          input_audio_format: 'pcm16',
+          output_audio_format: 'pcm16',
+          input_audio_transcription: {
+            model: 'whisper-1',
+          },
         },
         turn_detection: {
           type: 'server_vad',

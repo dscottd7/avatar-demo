@@ -4,15 +4,25 @@ import { useRef, useEffect } from 'react';
 
 interface AvatarVideoProps {
   sessionActive: boolean;
+  isConnecting: boolean;
+  isStreamReady: boolean;
+  onVideoReady?: (videoElement: HTMLVideoElement) => void;
 }
 
-export default function AvatarVideo({ sessionActive }: AvatarVideoProps) {
+export default function AvatarVideo({
+  sessionActive,
+  isConnecting,
+  isStreamReady,
+  onVideoReady
+}: AvatarVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    // Video stream will be attached here in Phase 4
-    // This is a placeholder for now
-  }, [sessionActive]);
+    if (videoRef.current && onVideoReady) {
+      onVideoReady(videoRef.current);
+      console.log('[AvatarVideo] Video element registered with hook');
+    }
+  }, [onVideoReady]);
 
   return (
     <div className="w-full max-w-4xl mx-auto">
@@ -25,11 +35,13 @@ export default function AvatarVideo({ sessionActive }: AvatarVideoProps) {
           muted={false}
         />
 
-        {!sessionActive && (
+        {(!sessionActive || isConnecting || !isStreamReady) && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm">
             <div className="text-center">
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse" />
-              <p className="text-gray-300 text-lg">Initializing avatar...</p>
+              <p className="text-gray-300 text-lg">
+                {isConnecting ? 'Connecting to avatar...' : 'Initializing avatar...'}
+              </p>
             </div>
           </div>
         )}

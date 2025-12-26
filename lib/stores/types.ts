@@ -29,7 +29,7 @@ export interface AppState {
   error: string | null;
 
   // Actions
-  setHeygenSession: (sessionId: string) => void;
+  setHeygenSession: (sessionId: string | null) => void;
   setHeygenConnected: (connected: boolean) => void;
   setOpenaiConnected: (connected: boolean) => void;
   setSessionActive: (active: boolean) => void;

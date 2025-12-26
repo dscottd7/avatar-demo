@@ -1,25 +1,27 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import StreamingAvatar, {
-  AvatarQuality,
-  StreamingEvents,
-  TaskType,
-} from '@heygen/streaming-avatar';
+import {
+  LiveAvatarSession,
+  SessionEvent,
+  AgentEventsEnum,
+  SessionState,
+} from '@heygen/liveavatar-web-sdk';
 import { useAppStore } from '@/lib/stores/useAppStore';
 import { avatarConfig } from '@/config/avatar.config';
 
 interface UseHeygenSessionReturn {
-  avatar: StreamingAvatar | null;
+  session: LiveAvatarSession | null;
   isConnecting: boolean;
   error: string | null;
   startSession: () => Promise<void>;
   stopSession: () => Promise<void>;
-  speak: (text: string) => Promise<void>;
+  speak: (text: string) => void;
   interrupt: () => void;
   mediaStream: MediaStream | null;
 }
 
 export function useHeygenSession(): UseHeygenSessionReturn {
-  const avatarRef = useRef<StreamingAvatar | null>(null);
+  const sessionRef = useRef<LiveAvatarSession | null>(null);
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
@@ -37,6 +39,8 @@ export function useHeygenSession(): UseHeygenSessionReturn {
       setError(null);
       setStoreError(null);
 
+      console.log('[LiveAvatar] Starting session...');
+
       // Get session token from backend API route
       const response = await fetch('/api/start-session', {
         method: 'POST',
@@ -50,57 +54,77 @@ export function useHeygenSession(): UseHeygenSessionReturn {
       }
 
       const { data: sessionData } = await response.json();
+      console.log('[LiveAvatar] Received session token:', sessionData.session_id);
 
-      // Initialize StreamingAvatar with token
-      const avatar = new StreamingAvatar({ token: sessionData.session_token });
-      avatarRef.current = avatar;
+      // Initialize LiveAvatarSession with token
+      const session = new LiveAvatarSession(sessionData.session_token);
+      sessionRef.current = session;
 
       // Set up event listeners
-      avatar.on(StreamingEvents.AVATAR_START_TALKING, () => {
-        console.log('[HeyGen] Avatar started talking');
-        setAvatarSpeaking(true);
-      });
+      session.on(SessionEvent.SESSION_STATE_CHANGED, (state: SessionState) => {
+        console.log('[LiveAvatar] Session state changed:', state);
 
-      avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => {
-        console.log('[HeyGen] Avatar stopped talking');
-        setAvatarSpeaking(false);
-      });
-
-      avatar.on(StreamingEvents.STREAM_READY, (event) => {
-        console.log('[HeyGen] Stream ready', event);
-        setHeygenConnected(true);
-        setSessionState('connected');
-
-        // Get media stream from event
-        if (event && event.detail && event.detail.stream) {
-          setMediaStream(event.detail.stream);
+        switch (state) {
+          case SessionState.CONNECTED:
+            setHeygenConnected(true);
+            setSessionState('connected');
+            setIsConnecting(false);
+            break;
+          case SessionState.DISCONNECTED:
+            setHeygenConnected(false);
+            setSessionState('disconnected');
+            setMediaStream(null);
+            break;
+          case SessionState.CONNECTING:
+            setSessionState('connecting');
+            break;
         }
       });
 
-      avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => {
-        console.log('[HeyGen] Stream disconnected');
+      session.on(SessionEvent.SESSION_STREAM_READY, () => {
+        console.log('[LiveAvatar] Stream ready');
+
+        // Create a video element to attach the stream
+        if (!videoElementRef.current) {
+          videoElementRef.current = document.createElement('video');
+          videoElementRef.current.autoplay = true;
+          videoElementRef.current.playsInline = true;
+        }
+
+        // Attach the session to the video element
+        session.attach(videoElementRef.current);
+
+        // Get the media stream from the video element
+        if (videoElementRef.current.srcObject instanceof MediaStream) {
+          setMediaStream(videoElementRef.current.srcObject);
+        }
+      });
+
+      session.on(AgentEventsEnum.AVATAR_SPEAK_STARTED, () => {
+        console.log('[LiveAvatar] Avatar started speaking');
+        setAvatarSpeaking(true);
+      });
+
+      session.on(AgentEventsEnum.AVATAR_SPEAK_ENDED, () => {
+        console.log('[LiveAvatar] Avatar stopped speaking');
+        setAvatarSpeaking(false);
+      });
+
+      session.on(SessionEvent.SESSION_DISCONNECTED, (reason) => {
+        console.log('[LiveAvatar] Session disconnected:', reason);
         setHeygenConnected(false);
         setSessionState('disconnected');
         setMediaStream(null);
       });
 
-      // Start avatar session
-      await avatar.createStartAvatar({
-        quality: AvatarQuality.High,
-        avatarName: avatarConfig.avatarId,
-        language: avatarConfig.language,
-        voice: {
-          voiceId: avatarConfig.openai.voice,
-        },
-      });
-
+      // Start the session
+      await session.start();
       setHeygenSession(sessionData.session_id);
-      setIsConnecting(false);
 
-      console.log('[HeyGen] Session started successfully');
+      console.log('[LiveAvatar] Session started successfully');
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to start HeyGen session';
-      console.error('[HeyGen] Session error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start LiveAvatar session';
+      console.error('[LiveAvatar] Session error:', err);
       setError(errorMessage);
       setStoreError(errorMessage);
       setSessionState('error');
@@ -110,54 +134,53 @@ export function useHeygenSession(): UseHeygenSessionReturn {
 
   const stopSession = useCallback(async () => {
     try {
-      if (avatarRef.current) {
-        await avatarRef.current.stopAvatar();
-        avatarRef.current = null;
+      if (sessionRef.current) {
+        await sessionRef.current.stop();
+        sessionRef.current = null;
+        videoElementRef.current = null;
         setMediaStream(null);
         setHeygenConnected(false);
         setSessionState('idle');
-        console.log('[HeyGen] Session stopped');
+        console.log('[LiveAvatar] Session stopped');
       }
     } catch (err) {
-      console.error('[HeyGen] Error stopping session:', err);
+      console.error('[LiveAvatar] Error stopping session:', err);
     }
   }, [setHeygenConnected, setSessionState]);
 
-  const speak = useCallback(async (text: string) => {
-    if (!avatarRef.current) {
-      throw new Error('Avatar session not initialized');
+  const speak = useCallback((text: string) => {
+    if (!sessionRef.current) {
+      throw new Error('LiveAvatar session not initialized');
     }
 
     try {
-      await avatarRef.current.speak({
-        text,
-        taskType: TaskType.REPEAT,
-      });
-      console.log('[HeyGen] Speak command sent:', text);
+      // Use repeat() to make the avatar speak the text verbatim
+      sessionRef.current.repeat(text);
+      console.log('[LiveAvatar] Speak command sent:', text);
     } catch (err) {
-      console.error('[HeyGen] Error sending speak command:', err);
+      console.error('[LiveAvatar] Error sending speak command:', err);
       throw err;
     }
   }, []);
 
   const interrupt = useCallback(() => {
-    if (avatarRef.current) {
-      avatarRef.current.interrupt();
-      console.log('[HeyGen] Interrupt sent');
+    if (sessionRef.current) {
+      sessionRef.current.interrupt();
+      console.log('[LiveAvatar] Interrupt sent');
     }
   }, []);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (avatarRef.current) {
-        avatarRef.current.stopAvatar().catch(console.error);
+      if (sessionRef.current) {
+        sessionRef.current.stop().catch(console.error);
       }
     };
   }, []);
 
   return {
-    avatar: avatarRef.current,
+    session: sessionRef.current,
     isConnecting,
     error,
     startSession,

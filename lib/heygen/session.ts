@@ -37,6 +37,12 @@ export async function createHeyGenSession(
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    console.error('[HeyGen API Error]', {
+      status: response.status,
+      statusText: response.statusText,
+      errorData,
+      requestBody,
+    });
     throw new Error(
       `HeyGen API error: ${response.status} - ${
         errorData.message || response.statusText

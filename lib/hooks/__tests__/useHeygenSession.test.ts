@@ -3,31 +3,43 @@ import { renderHook, act } from '@testing-library/react';
 import { useHeygenSession } from '../useHeygenSession';
 import { useAppStore } from '@/lib/stores/useAppStore';
 
-// Mock the StreamingAvatar SDK
-const createMockAvatar = () => ({
+// Mock the LiveAvatarSession SDK
+const createMockSession = () => ({
   on: vi.fn(),
   off: vi.fn(),
-  createStartAvatar: vi.fn().mockResolvedValue(undefined),
-  stopAvatar: vi.fn().mockResolvedValue(undefined),
-  speak: vi.fn().mockResolvedValue(undefined),
+  start: vi.fn().mockResolvedValue(undefined),
+  stop: vi.fn().mockResolvedValue(undefined),
+  repeat: vi.fn(),
+  message: vi.fn(),
   interrupt: vi.fn(),
+  attach: vi.fn(),
+  keepAlive: vi.fn().mockResolvedValue(undefined),
+  state: 'INACTIVE',
+  maxSessionDuration: null,
 });
 
-let mockAvatar = createMockAvatar();
+let mockSession = createMockSession();
 
-vi.mock('@heygen/streaming-avatar', () => ({
-  default: vi.fn(() => mockAvatar),
-  AvatarQuality: {
-    High: 'high',
+vi.mock('@heygen/liveavatar-web-sdk', () => ({
+  LiveAvatarSession: vi.fn(() => mockSession),
+  SessionEvent: {
+    SESSION_STATE_CHANGED: 'session.state_changed',
+    SESSION_STREAM_READY: 'session.stream_ready',
+    SESSION_CONNECTION_QUALITY_CHANGED: 'session.connection_quality_changed',
+    SESSION_DISCONNECTED: 'session.disconnected',
   },
-  StreamingEvents: {
-    AVATAR_START_TALKING: 'avatar_start_talking',
-    AVATAR_STOP_TALKING: 'avatar_stop_talking',
-    STREAM_READY: 'stream_ready',
-    STREAM_DISCONNECTED: 'stream_disconnected',
+  AgentEventsEnum: {
+    AVATAR_SPEAK_STARTED: 'avatar.speak_started',
+    AVATAR_SPEAK_ENDED: 'avatar.speak_ended',
+    USER_SPEAK_STARTED: 'user.speak_started',
+    USER_SPEAK_ENDED: 'user.speak_ended',
   },
-  TaskType: {
-    REPEAT: 'repeat',
+  SessionState: {
+    INACTIVE: 'INACTIVE',
+    CONNECTING: 'CONNECTING',
+    CONNECTED: 'CONNECTED',
+    DISCONNECTING: 'DISCONNECTING',
+    DISCONNECTED: 'DISCONNECTED',
   },
 }));
 
@@ -37,7 +49,7 @@ global.fetch = vi.fn();
 describe('useHeygenSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockAvatar = createMockAvatar();
+    mockSession = createMockSession();
 
     act(() => {
       useAppStore.getState().resetSession();
@@ -58,7 +70,7 @@ describe('useHeygenSession', () => {
   it('initializes with default values', () => {
     const { result } = renderHook(() => useHeygenSession());
 
-    expect(result.current.avatar).toBeNull();
+    expect(result.current.session).toBeNull();
     expect(result.current.isConnecting).toBe(false);
     expect(result.current.error).toBeNull();
     expect(result.current.mediaStream).toBeNull();
@@ -95,10 +107,11 @@ describe('useHeygenSession', () => {
       await result.current.startSession();
     });
 
-    expect(mockAvatar.on).toHaveBeenCalledWith('avatar_start_talking', expect.any(Function));
-    expect(mockAvatar.on).toHaveBeenCalledWith('avatar_stop_talking', expect.any(Function));
-    expect(mockAvatar.on).toHaveBeenCalledWith('stream_ready', expect.any(Function));
-    expect(mockAvatar.on).toHaveBeenCalledWith('stream_disconnected', expect.any(Function));
+    expect(mockSession.on).toHaveBeenCalledWith('session.state_changed', expect.any(Function));
+    expect(mockSession.on).toHaveBeenCalledWith('session.stream_ready', expect.any(Function));
+    expect(mockSession.on).toHaveBeenCalledWith('avatar.speak_started', expect.any(Function));
+    expect(mockSession.on).toHaveBeenCalledWith('avatar.speak_ended', expect.any(Function));
+    expect(mockSession.on).toHaveBeenCalledWith('session.disconnected', expect.any(Function));
   });
 
   it('updates store with session ID', async () => {
@@ -128,30 +141,27 @@ describe('useHeygenSession', () => {
     expect(result.current.error).toContain('Failed to start session');
   });
 
-  it('calls speak with correct parameters', async () => {
+  it('calls repeat with text parameter', async () => {
     const { result } = renderHook(() => useHeygenSession());
 
     await act(async () => {
       await result.current.startSession();
     });
 
-    await act(async () => {
-      await result.current.speak('Hello world');
+    act(() => {
+      result.current.speak('Hello world');
     });
 
-    expect(mockAvatar.speak).toHaveBeenCalledWith({
-      text: 'Hello world',
-      taskType: 'repeat',
-    });
+    expect(mockSession.repeat).toHaveBeenCalledWith('Hello world');
   });
 
-  it('throws error when speaking without initialized session', async () => {
+  it('throws error when speaking without initialized session', () => {
     const { result } = renderHook(() => useHeygenSession());
 
-    await expect(result.current.speak('Hello')).rejects.toThrow('Avatar session not initialized');
+    expect(() => result.current.speak('Hello')).toThrow('LiveAvatar session not initialized');
   });
 
-  it('calls interrupt on the avatar', async () => {
+  it('calls interrupt on the session', async () => {
     const { result } = renderHook(() => useHeygenSession());
 
     await act(async () => {
@@ -162,7 +172,7 @@ describe('useHeygenSession', () => {
       result.current.interrupt();
     });
 
-    expect(mockAvatar.interrupt).toHaveBeenCalled();
+    expect(mockSession.interrupt).toHaveBeenCalled();
   });
 
   it('handles interrupt when session not started', () => {
@@ -173,6 +183,6 @@ describe('useHeygenSession', () => {
       result.current.interrupt();
     });
 
-    expect(mockAvatar.interrupt).not.toHaveBeenCalled();
+    expect(mockSession.interrupt).not.toHaveBeenCalled();
   });
 });

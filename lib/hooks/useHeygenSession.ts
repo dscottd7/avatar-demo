@@ -22,6 +22,7 @@ interface UseHeygenSessionReturn {
 export function useHeygenSession(): UseHeygenSessionReturn {
   const sessionRef = useRef<LiveAvatarSession | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
@@ -119,6 +120,9 @@ export function useHeygenSession(): UseHeygenSessionReturn {
 
       // Start the session
       await session.start();
+
+      // Store session ID for cleanup
+      sessionIdRef.current = sessionData.session_id;
       setHeygenSession(sessionData.session_id);
 
       console.log('[LiveAvatar] Session started successfully');
@@ -134,19 +138,44 @@ export function useHeygenSession(): UseHeygenSessionReturn {
 
   const stopSession = useCallback(async () => {
     try {
+      const sessionId = sessionIdRef.current;
+
+      // Stop the SDK session first
       if (sessionRef.current) {
         await sessionRef.current.stop();
         sessionRef.current = null;
         videoElementRef.current = null;
         setMediaStream(null);
-        setHeygenConnected(false);
-        setSessionState('idle');
-        console.log('[LiveAvatar] Session stopped');
+        console.log('[LiveAvatar] Client session stopped');
       }
+
+      // Call backend API to stop the server-side session
+      if (sessionId) {
+        console.log('[LiveAvatar] Stopping server session:', sessionId);
+        const response = await fetch('/api/stop-session', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ session_id: sessionId }),
+        });
+
+        if (!response.ok) {
+          console.error('[LiveAvatar] Failed to stop server session:', response.statusText);
+        } else {
+          console.log('[LiveAvatar] Server session stopped successfully');
+        }
+
+        sessionIdRef.current = null;
+      }
+
+      setHeygenConnected(false);
+      setSessionState('idle');
+      setHeygenSession(null);
     } catch (err) {
       console.error('[LiveAvatar] Error stopping session:', err);
     }
-  }, [setHeygenConnected, setSessionState]);
+  }, [setHeygenConnected, setSessionState, setHeygenSession]);
 
   const speak = useCallback((text: string) => {
     if (!sessionRef.current) {
@@ -176,7 +205,35 @@ export function useHeygenSession(): UseHeygenSessionReturn {
       if (sessionRef.current) {
         sessionRef.current.stop().catch(console.error);
       }
+
+      // Also call backend API to stop server session
+      if (sessionIdRef.current) {
+        fetch('/api/stop-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionIdRef.current }),
+          keepalive: true, // Ensures request completes even if page is closing
+        }).catch(console.error);
+      }
     };
+  }, []);
+
+  // Cleanup on page unload (browser close, refresh, navigation)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const sessionId = sessionIdRef.current;
+      if (sessionId) {
+        // Use sendBeacon for reliable cleanup during page unload
+        const blob = new Blob(
+          [JSON.stringify({ session_id: sessionId })],
+          { type: 'application/json' }
+        );
+        navigator.sendBeacon('/api/stop-session', blob);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
   return {

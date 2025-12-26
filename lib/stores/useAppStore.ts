@@ -28,7 +28,7 @@ export const useAppStore = create<AppState>()(
       error: null,
 
       // Session actions
-      setHeygenSession: (sessionId: string) =>
+      setHeygenSession: (sessionId: string | null) =>
         set({ heygenSessionId: sessionId }, false, 'setHeygenSession'),
 
       setHeygenConnected: (connected: boolean) =>

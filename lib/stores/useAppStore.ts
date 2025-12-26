@@ -1,6 +1,5 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import { shallow } from 'zustand/shallow';
 import type { AppState, Message } from './types';
 
 /**
@@ -104,27 +103,34 @@ export const useAppStore = create<AppState>()(
 );
 
 // Selector hooks for optimized re-renders
-export const useSessionState = () =>
-  useAppStore(
-    (state) => ({
-      sessionId: state.heygenSessionId,
-      heygenConnected: state.heygenConnected,
-      openaiConnected: state.openaiConnected,
-      sessionActive: state.sessionActive,
-      sessionState: state.sessionState,
-    }),
-    shallow
-  );
+// Using individual selectors instead of shallow comparison for better type safety
+export const useSessionState = () => {
+  const sessionId = useAppStore((state) => state.heygenSessionId);
+  const heygenConnected = useAppStore((state) => state.heygenConnected);
+  const openaiConnected = useAppStore((state) => state.openaiConnected);
+  const sessionActive = useAppStore((state) => state.sessionActive);
+  const sessionState = useAppStore((state) => state.sessionState);
 
-export const useAudioState = () =>
-  useAppStore(
-    (state) => ({
-      isMuted: state.isMuted,
-      isUserTalking: state.isUserTalking,
-      isAvatarSpeaking: state.isAvatarSpeaking,
-    }),
-    shallow
-  );
+  return {
+    sessionId,
+    heygenConnected,
+    openaiConnected,
+    sessionActive,
+    sessionState,
+  };
+};
+
+export const useAudioState = () => {
+  const isMuted = useAppStore((state) => state.isMuted);
+  const isUserTalking = useAppStore((state) => state.isUserTalking);
+  const isAvatarSpeaking = useAppStore((state) => state.isAvatarSpeaking);
+
+  return {
+    isMuted,
+    isUserTalking,
+    isAvatarSpeaking,
+  };
+};
 
 export const useMessages = () => useAppStore((state) => state.messages);
 

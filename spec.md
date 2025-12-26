@@ -23,7 +23,7 @@ Kai is a general-purpose conversational AI avatar that combines HeyGen's LiveAva
 
 ### Third-Party Services
 - **Avatar Video:** HeyGen LiveAvatar (CUSTOM mode)
-- **LLM & Voice:** OpenAI Realtime API (gpt-4o-realtime-preview)
+- **LLM & Voice:** OpenAI Realtime API (gpt-4o-mini-realtime-preview)
 - **WebRTC:** LiveKit (provided by HeyGen)
 
 ### Reference Implementation
@@ -125,7 +125,7 @@ export const avatarConfig = {
 
   // OpenAI Settings
   openai: {
-    model: 'gpt-4o-realtime-preview',
+    model: 'gpt-4o-mini-realtime-preview',
     voice: 'alloy', // Options: alloy, echo, fable, onyx, nova, shimmer
   },
 
@@ -295,7 +295,7 @@ interface AppState {
 
 **WebSocket Connection:**
 ```
-wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview
+wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview
 ```
 
 **Authentication:**

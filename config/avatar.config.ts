@@ -1,10 +1,10 @@
 export const avatarConfig = {
   // HeyGen Avatar Settings
-  avatarId: 'dd73ea75-1218-4ef3-92ce-606d5f7fbc0a', // Placeholder - change as needed
+  avatarId: '200eba85-74c0-4210-8670-81ceab4efd0d', // Pedro suit
 
   // OpenAI Settings
   openai: {
-    model: 'gpt-4o-realtime-preview-2024-12-17',
+    model: 'gpt-4o-realtime-preview', // Using realtime-preview for lower latency
     voice: 'alloy', // Options: alloy, echo, fable, onyx, nova, shimmer
   },
 

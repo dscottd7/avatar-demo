@@ -46,6 +46,7 @@ export enum ServerEventType {
 
 // Session configuration
 export interface SessionConfig {
+  type?: 'session'; // Required by OpenAI API
   modalities?: ('text' | 'audio')[];
   instructions?: string;
   voice?: 'alloy' | 'echo' | 'shimmer';

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
+import { shallow } from 'zustand/shallow';
 import type { AppState, Message } from './types';
 
 /**
@@ -104,20 +105,26 @@ export const useAppStore = create<AppState>()(
 
 // Selector hooks for optimized re-renders
 export const useSessionState = () =>
-  useAppStore((state) => ({
-    sessionId: state.heygenSessionId,
-    heygenConnected: state.heygenConnected,
-    openaiConnected: state.openaiConnected,
-    sessionActive: state.sessionActive,
-    sessionState: state.sessionState,
-  }));
+  useAppStore(
+    (state) => ({
+      sessionId: state.heygenSessionId,
+      heygenConnected: state.heygenConnected,
+      openaiConnected: state.openaiConnected,
+      sessionActive: state.sessionActive,
+      sessionState: state.sessionState,
+    }),
+    shallow
+  );
 
 export const useAudioState = () =>
-  useAppStore((state) => ({
-    isMuted: state.isMuted,
-    isUserTalking: state.isUserTalking,
-    isAvatarSpeaking: state.isAvatarSpeaking,
-  }));
+  useAppStore(
+    (state) => ({
+      isMuted: state.isMuted,
+      isUserTalking: state.isUserTalking,
+      isAvatarSpeaking: state.isAvatarSpeaking,
+    }),
+    shallow
+  );
 
 export const useMessages = () => useAppStore((state) => state.messages);
 

@@ -5,13 +5,29 @@ import { useAudioState, useAppStore } from '@/lib/stores/useAppStore';
 interface ControlPanelProps {
   onStopSession: () => void;
   onInterrupt: () => void;
+  onToggleMute?: () => void;
+  isMuted?: boolean;
 }
 
-export default function ControlPanel({ onStopSession, onInterrupt }: ControlPanelProps) {
-  const { isMuted, isAvatarSpeaking } = useAudioState();
+export default function ControlPanel({
+  onStopSession,
+  onInterrupt,
+  onToggleMute,
+  isMuted: propIsMuted
+}: ControlPanelProps) {
+  const { isMuted: storeIsMuted, isAvatarSpeaking } = useAudioState();
   const setMuted = useAppStore((state) => state.setMuted);
 
-  const toggleMute = () => setMuted(!isMuted);
+  // Use prop if provided, otherwise use store value
+  const isMuted = propIsMuted !== undefined ? propIsMuted : storeIsMuted;
+
+  const toggleMute = () => {
+    if (onToggleMute) {
+      onToggleMute();
+    } else {
+      setMuted(!storeIsMuted);
+    }
+  };
 
   return (
     <div className="w-full max-w-4xl mx-auto">

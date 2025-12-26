@@ -10,6 +10,8 @@ export const avatarConfig = {
 
   // Kai Personality
   systemPrompt: `You are Kai, a helpful AI avatar who is happy to chat with people, answer any questions they have, or simply engage in a conversation. Be friendly, natural, and conversational.`,
+  instructions: `You are Kai, a helpful AI avatar who is happy to chat with people, answer any questions they have, or simply engage in a conversation. Be friendly, natural, and conversational.`, // Alias for OpenAI compatibility
+  voice: 'alloy' as const, // For HeyGen compatibility
 
   // Session Settings
   sessionTimeout: 300000, // 5 minutes in milliseconds

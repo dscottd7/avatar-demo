@@ -50,16 +50,18 @@ export class OpenAIRealtimeClient {
       try {
         const model = this.config.model || 'gpt-4o-realtime-preview-2024-12-17';
 
-        // Browser WebSocket doesn't support custom headers
-        // OpenAI Realtime API uses a special authentication scheme:
-        // Pass API key as a WebSocket subprotocol in the format: "realtime" + "openai-insecure-api-key.{API_KEY}"
-        // Or use "openai-beta.realtime-v1" as the subprotocol and send auth in session.update
+        // Browser WebSocket doesn't support custom headers (Authorization: Bearer)
+        // WORKAROUND for Phase 5: Pass API key as query parameter
+        // ⚠️ This is less secure but works for prototyping
+        // Phase 6 will use ephemeral tokens from /v1/realtime/sessions endpoint
         const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
         console.log('[OpenAI] Connecting to Realtime API...');
+        console.log('[OpenAI] Model:', model);
 
-        // Use the authorization subprotocol format for browser WebSocket
-        // Format: The second protocol should be the API key in base64 or special format
+        // Use WebSocket subprotocol for authentication
+        // The API key is passed in the second protocol parameter
+        // Format: openai-insecure-api-key.{YOUR_API_KEY}
         this.ws = new WebSocket(url, ['realtime', `openai-insecure-api-key.${this.config.apiKey.trim()}`]);
 
         this.ws.onopen = () => {
@@ -78,7 +80,14 @@ export class OpenAIRealtimeClient {
         this.ws.onmessage = (event) => {
           try {
             const serverEvent = JSON.parse(event.data) as RealtimeServerEvent;
-            console.log('[OpenAI] Received event:', serverEvent.type);
+
+            // Log all events for debugging Phase 5
+            if (serverEvent.type === ServerEventType.ERROR) {
+              console.error('[OpenAI] Error event received:', JSON.stringify(serverEvent, null, 2));
+            } else {
+              console.log('[OpenAI] Received event:', serverEvent.type);
+            }
+
             this.handleServerEvent(serverEvent);
           } catch (error) {
             console.error('[OpenAI] Error parsing message:', error, 'Raw data:', event.data);

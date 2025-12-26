@@ -4,7 +4,7 @@ export const avatarConfig = {
 
   // OpenAI Settings
   openai: {
-    model: 'gpt-4o-realtime-preview', // Using realtime-preview for lower latency
+    model: 'gpt-4o-mini-realtime-preview', // Using mini model for lower cost and latency
     voice: 'alloy', // Options: alloy, echo, fable, onyx, nova, shimmer
   },
 

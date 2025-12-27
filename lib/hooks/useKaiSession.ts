@@ -1,53 +1,37 @@
 /**
  * useKaiSession Hook
- * Orchestrates HeyGen and OpenAI integration for the Kai avatar
- * Manages the complete conversation flow between user, OpenAI, and HeyGen
- *
- * ⚠️ SECURITY NOTE: This implementation uses client-side OpenAI API key
- * for rapid prototyping. NOT suitable for production.
- * See Phase 6 for secure token-based approach.
+ * The main orchestration hook that combines HeyGen, OpenAI (WebRTC), and Microphone.
  */
-
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useHeygenSession } from './useHeygenSession';
-import { useOpenAIRealtime } from './useOpenAIRealtime';
+import { useOpenAIWebRTC } from './useOpenAIWebRTC';
 import { useMicrophone } from './useMicrophone';
 import { useAppStore } from '@/lib/stores/useAppStore';
-
-interface UseKaiSessionConfig {
-  openaiApiKey: string;
-  autoStartMicrophone?: boolean;
-}
+import { processAudioForOpenAI } from '@/lib/openai/audio';
 
 interface UseKaiSessionReturn {
-  // Session control
   startSession: () => Promise<void>;
   stopSession: () => Promise<void>;
-
-  // Audio control
   toggleMute: () => void;
   interrupt: () => void;
-
-  // State
   isSessionActive: boolean;
   isConnecting: boolean;
   isMicrophoneActive: boolean;
   isMuted: boolean;
   error: string | null;
-
-  // Video attachment
   attachVideo: (videoElement: HTMLVideoElement) => void;
   isStreamReady: boolean;
 }
 
-export function useKaiSession(config: UseKaiSessionConfig): UseKaiSessionReturn {
-  const sessionActive = useAppStore((state) => state.heygenConnected || state.openaiConnected);
+export function useKaiSession(): UseKaiSessionReturn {
+  const sessionActive = useAppStore((state) => state.sessionActive);
+  const setSessionActive = useAppStore((state) => state.setSessionActive);
 
-  // HeyGen session management
+  // === Child Hooks ===
   const {
     startSession: startHeygenSession,
     stopSession: stopHeygenSession,
-    speak,
+    sendAudioToAvatar,
     interrupt,
     attachVideo,
     isStreamReady,
@@ -55,116 +39,120 @@ export function useKaiSession(config: UseKaiSessionConfig): UseKaiSessionReturn 
     error: heygenError,
   } = useHeygenSession();
 
-  // OpenAI Realtime connection
   const {
     connect: connectOpenAI,
     disconnect: disconnectOpenAI,
-    sendAudio,
+    addMicrophoneTrack,
+    remoteAudioStream,
     isConnecting: openaiConnecting,
     error: openaiError,
-  } = useOpenAIRealtime({
-    apiKey: config.openaiApiKey,
-    onAudioResponse: (audioBase64) => {
-      // When OpenAI sends audio response, forward it to HeyGen for lip-sync
-      // Note: HeyGen LiveAvatar handles playback internally, but we could
-      // potentially use the audioBase64 for custom playback if needed
-      console.log('[Kai Session] Received audio from OpenAI, length:', audioBase64.length);
+  } = useOpenAIWebRTC();
 
-      // For now, we'll log this. In a future iteration, we might need to:
-      // 1. Decode the audio
-      // 2. Play it through HeyGen's avatar
-      // 3. Or handle it differently based on HeyGen's SDK capabilities
-    },
-    onTranscriptUpdate: (transcript, isUser) => {
-      console.log(`[Kai Session] Transcript update (${isUser ? 'User' : 'Assistant'}):`, transcript);
-
-      // When we get assistant transcript, we can send it to HeyGen to speak
-      if (!isUser && transcript) {
-        try {
-          speak(transcript);
-        } catch (err) {
-          console.error('[Kai Session] Error sending transcript to HeyGen:', err);
-        }
-      }
-    },
-  });
-
-  // Microphone management
   const {
+    stream: microphoneStream,
+    track: microphoneTrack,
     toggleMute,
     isMuted,
     isActive: isMicrophoneActive,
+    startCapture: startMicrophone,
+    stopCapture: stopMicrophone,
     error: microphoneError,
-  } = useMicrophone({
-    onAudioData: (audioBase64) => {
-      // Stream microphone audio to OpenAI
-      sendAudio(audioBase64);
-    },
-    enabled: sessionActive && config.autoStartMicrophone,
-  });
+  } = useMicrophone();
 
-  /**
-   * Start the complete Kai session (HeyGen + OpenAI + Microphone)
-   */
+  // === Audio Processing for OpenAI -> HeyGen ===
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  useEffect(() => {
+    // Only set up audio processing when both OpenAI stream and HeyGen session are ready
+    if (!remoteAudioStream || !isStreamReady) return;
+
+    console.log('[Kai Session] Both OpenAI stream and HeyGen ready. Setting up audio processor...');
+    const audioContext = new AudioContext({ sampleRate: 24000 });
+    const source = audioContext.createMediaStreamSource(remoteAudioStream);
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    // Threshold to detect silence (avoid sending empty audio that causes avatar flickering)
+    const SILENCE_THRESHOLD = 0.01;
+
+    processor.onaudioprocess = (e) => {
+      const inputData = e.inputBuffer.getChannelData(0);
+
+      // Check if there's actual audio content (not just silence)
+      let maxAmplitude = 0;
+      for (let i = 0; i < inputData.length; i++) {
+        const abs = Math.abs(inputData[i]);
+        if (abs > maxAmplitude) maxAmplitude = abs;
+      }
+
+      // Only send audio if it's above the silence threshold
+      if (maxAmplitude > SILENCE_THRESHOLD) {
+        const audioBase64 = processAudioForOpenAI(inputData, audioContext.sampleRate, 1);
+        sendAudioToAvatar(audioBase64);
+      }
+    };
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+
+    audioContextRef.current = audioContext;
+
+    return () => {
+      console.log('[Kai Session] Cleaning up remote audio processor...');
+      processor.disconnect();
+      source.disconnect();
+      audioContext.close();
+    };
+  }, [remoteAudioStream, isStreamReady, sendAudioToAvatar]);
+
+  // === Main Session Control Logic ===
   const startSession = useCallback(async () => {
     console.log('[Kai Session] Starting complete session...');
-
+    setSessionActive(true);
     try {
-      // Start HeyGen session first
-      await startHeygenSession();
-      console.log('[Kai Session] HeyGen session started');
+      // Start HeyGen and microphone in parallel (they're independent)
+      console.log('[Kai Session] Starting HeyGen session and microphone...');
+      const [, micStream] = await Promise.all([
+        startHeygenSession(),
+        startMicrophone(),
+      ]);
 
-      // Connect to OpenAI
-      await connectOpenAI();
-      console.log('[Kai Session] OpenAI connected');
+      // Now connect to OpenAI with the microphone stream
+      // This ensures the audio track is included in the SDP offer
+      console.log('[Kai Session] Connecting to OpenAI with microphone stream...');
+      await connectOpenAI(micStream);
 
       console.log('[Kai Session] Session fully initialized');
     } catch (err) {
       console.error('[Kai Session] Error starting session:', err);
-      // Clean up if partial initialization
-      await stopSession();
+      await stopSession(); // Cleanup on failure
       throw err;
     }
-  }, [startHeygenSession, connectOpenAI]);
+  }, [setSessionActive, startHeygenSession, connectOpenAI, startMicrophone]);
 
-  /**
-   * Stop the complete Kai session and cleanup all resources
-   */
   const stopSession = useCallback(async () => {
     console.log('[Kai Session] Stopping complete session...');
-
-    // Stop all services in parallel
-    await Promise.all([
+    await Promise.allSettled([
       stopHeygenSession(),
       disconnectOpenAI(),
+      Promise.resolve(stopMicrophone()),
     ]);
-
+    setSessionActive(false);
     console.log('[Kai Session] Session stopped');
-  }, [stopHeygenSession, disconnectOpenAI]);
+  }, [stopHeygenSession, disconnectOpenAI, stopMicrophone, setSessionActive]);
 
-  // Combined error state
   const error = heygenError || openaiError || microphoneError;
-
-  // Combined connecting state
   const isConnecting = heygenConnecting || openaiConnecting;
 
   return {
-    // Session control
     startSession,
     stopSession,
-
-    // Audio control
     toggleMute,
     interrupt,
-
-    // State
     isSessionActive: sessionActive,
     isConnecting,
     isMicrophoneActive,
     isMuted,
     error,
-
-    // Video
     attachVideo,
     isStreamReady,
   };

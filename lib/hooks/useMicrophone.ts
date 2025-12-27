@@ -16,7 +16,9 @@ interface UseMicrophoneReturn {
   isMuted: boolean;
   error: string | null;
   permissionState: 'prompt' | 'granted' | 'denied' | 'unknown';
-  startCapture: () => Promise<void>;
+  stream: MediaStream | null;
+  track: MediaStreamTrack | null;
+  startCapture: () => Promise<MediaStream>;
   stopCapture: () => void;
   toggleMute: () => void;
 }
@@ -28,23 +30,23 @@ export function useMicrophone(config: UseMicrophoneConfig = {}): UseMicrophoneRe
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [permissionState, setPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'unknown'>('unknown');
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const [track, setTrack] = useState<MediaStreamTrack | null>(null);
 
   const audioContextRef = useRef<AudioContext | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const audioWorkletNodeRef = useRef<AudioWorkletNode | null>(null);
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorNodeRef = useRef<ScriptProcessorNode | null>(null);
 
   /**
    * Request microphone permission and start capturing audio
+   * @returns The MediaStream from the microphone
    */
-  const startCapture = useCallback(async () => {
+  const startCapture = useCallback(async (): Promise<MediaStream> => {
     try {
       console.log('[Microphone] Requesting microphone access...');
       setError(null);
 
-      // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({
+      const newStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
           sampleRate: 24000, // Match OpenAI's expected rate
@@ -54,51 +56,40 @@ export function useMicrophone(config: UseMicrophoneConfig = {}): UseMicrophoneRe
         },
       });
 
-      mediaStreamRef.current = stream;
+      const audioTrack = newStream.getAudioTracks()[0];
+      if (!audioTrack) {
+        throw new Error('No audio track found in the microphone stream.');
+      }
+
+      setStream(newStream);
+      setTrack(audioTrack);
       setPermissionState('granted');
-      console.log('[Microphone] Microphone access granted');
-
-      // Create AudioContext
-      const audioContext = new AudioContext({ sampleRate: 24000 });
-      audioContextRef.current = audioContext;
-
-      // Create source node from microphone stream
-      const sourceNode = audioContext.createMediaStreamSource(stream);
-      sourceNodeRef.current = sourceNode;
-
-      // Create processor node for audio capture
-      // Note: ScriptProcessorNode is deprecated but still widely supported
-      // For production, consider using AudioWorklet
-      const processorNode = audioContext.createScriptProcessor(AUDIO_CHUNK_SIZE, 1, 1);
-      processorNodeRef.current = processorNode;
-
-      processorNode.onaudioprocess = (e) => {
-        if (isMuted || !config.onAudioData) {
-          return;
-        }
-
-        const inputData = e.inputBuffer.getChannelData(0);
-        const sampleRate = audioContext.sampleRate;
-
-        // Process and send audio data
-        try {
-          const audioBase64 = processAudioForOpenAI(
-            inputData,
-            sampleRate,
-            1 // mono
-          );
-          config.onAudioData(audioBase64);
-        } catch (err) {
-          console.error('[Microphone] Error processing audio:', err);
-        }
-      };
-
-      // Connect nodes: source -> processor -> destination
-      sourceNode.connect(processorNode);
-      processorNode.connect(audioContext.destination);
-
       setIsActive(true);
       console.log('[Microphone] Audio capture started');
+
+      // If a data callback is provided, set up processing
+      if (config.onAudioData) {
+        console.log('[Microphone] Setting up audio data processing for callback');
+        const audioContext = new AudioContext({ sampleRate: 24000 });
+        const sourceNode = audioContext.createMediaStreamSource(newStream);
+        const processorNode = audioContext.createScriptProcessor(AUDIO_CHUNK_SIZE, 1, 1);
+
+        processorNode.onaudioprocess = (e) => {
+          if (isMuted || !config.onAudioData) return;
+          const inputData = e.inputBuffer.getChannelData(0);
+          const audioBase64 = processAudioForOpenAI(inputData, audioContext.sampleRate, 1);
+          config.onAudioData(audioBase64);
+        };
+
+        sourceNode.connect(processorNode);
+        processorNode.connect(audioContext.destination);
+
+        audioContextRef.current = audioContext;
+        sourceNodeRef.current = sourceNode;
+        processorNodeRef.current = processorNode;
+      }
+
+      return newStream;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to access microphone';
       console.error('[Microphone] Error:', err);
@@ -106,7 +97,15 @@ export function useMicrophone(config: UseMicrophoneConfig = {}): UseMicrophoneRe
       setPermissionState('denied');
       throw err;
     }
-  }, [config, isMuted]);
+  }, [config.onAudioData, isMuted]);
+
+  // Use a ref to track the stream for cleanup without causing re-renders
+  const streamRef = useRef<MediaStream | null>(null);
+
+  // Keep streamRef in sync with stream state
+  useEffect(() => {
+    streamRef.current = stream;
+  }, [stream]);
 
   /**
    * Stop capturing audio and release resources
@@ -114,32 +113,15 @@ export function useMicrophone(config: UseMicrophoneConfig = {}): UseMicrophoneRe
   const stopCapture = useCallback(() => {
     console.log('[Microphone] Stopping audio capture...');
 
-    // Disconnect and clean up audio nodes
-    if (processorNodeRef.current) {
-      processorNodeRef.current.disconnect();
-      processorNodeRef.current.onaudioprocess = null;
-      processorNodeRef.current = null;
-    }
+    if (processorNodeRef.current) processorNodeRef.current.disconnect();
+    if (sourceNodeRef.current) sourceNodeRef.current.disconnect();
+    if (audioContextRef.current) audioContextRef.current.close().catch(console.error);
 
-    if (sourceNodeRef.current) {
-      sourceNodeRef.current.disconnect();
-      sourceNodeRef.current = null;
-    }
+    // Use ref to avoid dependency on stream state
+    streamRef.current?.getTracks().forEach((track) => track.stop());
 
-    // Close audio context
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(console.error);
-      audioContextRef.current = null;
-    }
-
-    // Stop media stream tracks
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => {
-        track.stop();
-      });
-      mediaStreamRef.current = null;
-    }
-
+    setStream(null);
+    setTrack(null);
     setIsActive(false);
     console.log('[Microphone] Audio capture stopped');
   }, []);
@@ -150,10 +132,13 @@ export function useMicrophone(config: UseMicrophoneConfig = {}): UseMicrophoneRe
   const toggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const newMuted = !prev;
+      if (track) {
+        track.enabled = !newMuted;
+      }
       console.log(`[Microphone] Mute ${newMuted ? 'enabled' : 'disabled'}`);
       return newMuted;
     });
-  }, []);
+  }, [track]);
 
   /**
    * Check microphone permission on mount
@@ -177,13 +162,24 @@ export function useMicrophone(config: UseMicrophoneConfig = {}): UseMicrophoneRe
   }, []);
 
   /**
-   * Auto-start if enabled
+   * Auto-start if enabled prop is explicitly set to true
+   * Note: We only auto-stop if enabled was previously true and becomes false.
+   * This allows manual control via startCapture/stopCapture when enabled is undefined.
    */
+  const wasEnabledRef = useRef<boolean | undefined>(undefined);
+
   useEffect(() => {
+    // Only react to explicit enabled prop changes, not undefined
+    if (config.enabled === undefined) {
+      return;
+    }
+
     if (config.enabled && !isActive) {
       startCapture().catch(console.error);
-    } else if (!config.enabled && isActive) {
+      wasEnabledRef.current = true;
+    } else if (!config.enabled && wasEnabledRef.current) {
       stopCapture();
+      wasEnabledRef.current = false;
     }
   }, [config.enabled, isActive, startCapture, stopCapture]);
 
@@ -201,6 +197,8 @@ export function useMicrophone(config: UseMicrophoneConfig = {}): UseMicrophoneRe
     isMuted,
     error,
     permissionState,
+    stream,
+    track,
     startCapture,
     stopCapture,
     toggleMute,

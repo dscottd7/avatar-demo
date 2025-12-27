@@ -13,10 +13,10 @@ export default function ChatHistory() {
   }, [messages]);
 
   return (
-    <div className="w-full max-w-4xl mx-auto">
-      <h2 className="text-xl font-semibold mb-4 text-gray-300">Conversation History</h2>
+    <div className="flex-1 flex flex-col min-h-0">
+      <h2 className="text-xl font-semibold mb-4 text-gray-300">Conversation</h2>
 
-      <div className="bg-gray-900/50 rounded-xl p-4 h-64 overflow-y-auto custom-scrollbar">
+      <div className="flex-1 bg-gray-900/50 rounded-xl p-4 overflow-y-auto custom-scrollbar">
         {messages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-gray-500">
             <p>Start a conversation with Kai...</p>

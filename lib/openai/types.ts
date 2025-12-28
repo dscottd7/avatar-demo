@@ -33,12 +33,12 @@ export enum ServerEventType {
   RESPONSE_OUTPUT_ITEM_DONE = 'response.output_item.done',
   RESPONSE_CONTENT_PART_ADDED = 'response.content_part.added',
   RESPONSE_CONTENT_PART_DONE = 'response.content_part.done',
-  RESPONSE_TEXT_DELTA = 'response.text.delta',
-  RESPONSE_TEXT_DONE = 'response.text.done',
-  RESPONSE_AUDIO_TRANSCRIPT_DELTA = 'response.audio_transcript.delta',
-  RESPONSE_AUDIO_TRANSCRIPT_DONE = 'response.audio_transcript.done',
-  RESPONSE_AUDIO_DELTA = 'response.audio.delta',
-  RESPONSE_AUDIO_DONE = 'response.audio.done',
+  RESPONSE_TEXT_DELTA = 'response.output_text.delta',
+  RESPONSE_TEXT_DONE = 'response.output_text.done',
+  RESPONSE_AUDIO_TRANSCRIPT_DELTA = 'response.output_audio_transcript.delta',
+  RESPONSE_AUDIO_TRANSCRIPT_DONE = 'response.output_audio_transcript.done',
+  RESPONSE_AUDIO_DELTA = 'response.output_audio.delta',
+  RESPONSE_AUDIO_DONE = 'response.output_audio.done',
   RESPONSE_FUNCTION_CALL_ARGUMENTS_DELTA = 'response.function_call_arguments.delta',
   RESPONSE_FUNCTION_CALL_ARGUMENTS_DONE = 'response.function_call_arguments.done',
   RATE_LIMITS_UPDATED = 'rate_limits.updated',
@@ -46,19 +46,16 @@ export enum ServerEventType {
 
 // Session configuration (updated for 2025 API)
 export interface SessionConfig {
-  type?: 'realtime' | 'transcription'; // Required by OpenAI API - 'realtime' for voice conversations
-  model?: string; // e.g., 'gpt-realtime-2025-08-25'
-  output_modalities?: ('text' | 'audio')[]; // Changed from 'modalities' to 'output_modalities'
+  type?: 'realtime' | 'transcription';
+  modalities?: ('text' | 'audio')[];
   instructions?: string;
-  voice?: 'alloy' | 'echo' | 'shimmer' | 'fable' | 'onyx' | 'nova';
-  audio?: {
-    input_audio_format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
-    output_audio_format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
-    input_audio_transcription?: {
-      model?: 'whisper-1';
-    };
-    speed?: number;
-    noise_reduction?: boolean;
+  input_audio_transcription?: {
+    model?: 'whisper-1';
+    format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
+  };
+  output_audio_synthesis?: {
+    voice?: 'alloy' | 'echo' | 'shimmer' | 'fable' | 'onyx' | 'nova' | 'ash' | 'ballad' | 'coral' | 'sage' | 'verse' | 'marin' | 'cedar';
+    format?: 'pcm16' | 'g711_ulaw' | 'g711_alaw';
   };
   turn_detection?: {
     type: 'server_vad';
@@ -74,8 +71,7 @@ export interface SessionConfig {
   }>;
   tool_choice?: 'auto' | 'none' | 'required';
   temperature?: number;
-  max_output_tokens?: number | 'inf'; // Changed from max_response_output_tokens
-  truncation?: 'auto' | 'disabled';
+  max_response_output_tokens?: number | 'inf';
 }
 
 // Message types

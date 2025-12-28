@@ -33,32 +33,42 @@ Kai is a general-purpose conversational AI avatar that combines HeyGen's LiveAva
 
 ## Architecture Overview
 
-### System Architecture
+### System Architecture (Revised for WebRTC)
 
 ```
 User (Browser)
-    ↓
+    │
+    ├─> 1. Get HeyGen Token
+    │
 Next.js Frontend
-    ↓
-┌─────────────────────────────────────┐
-│  Backend API Routes (Next.js)       │
-│  - /api/start-session               │
-│  - /api/stop-session                │
-│  - /api/keep-session-alive          │
-│  - /api/get-openai-token            │
-└─────────────────────────────────────┘
-    ↓                    ↓
-HeyGen LiveAvatar    OpenAI Realtime API
-(Video Generation)   (LLM + Voice Processing)
+    │   └─> /api/heygen-session (Handles HeyGen token)
+    │
+    ├─> 2. Create WebRTC Offer
+    │
+    ├─> 3. POST Offer to Backend
+    │   │
+    │   └─> /api/openai-call
+    │       │
+    │       └─> POST to OpenAI /v1/realtime/calls
+    │           (Returns SDP Answer)
+    │
+    ├─> 4. Receive SDP Answer
+    │
+    └─> 5. Establish Peer Connection
+        │
+        └─> Direct WebRTC Connection to OpenAI
+            (Bi-directional Audio Stream)
 ```
 
-### CUSTOM Mode Flow
+### OpenAI Realtime Flow (WebRTC)
 
-1. **User speaks** → Microphone captures audio
-2. **Audio sent to OpenAI Realtime API** → Real-time speech-to-text + LLM processing
-3. **OpenAI generates response** → Text-to-speech audio (PCM 16Bit 24KHz)
-4. **Audio sent to HeyGen via WebSocket** → Avatar lip-syncs and displays video
-5. **User sees/hears avatar response** → Cycle repeats
+The connection to OpenAI is not a simple WebSocket, but a **WebRTC peer connection**.
+
+1.  **Client Creates Offer:** The browser generates a WebRTC "offer" (using Session Description Protocol - SDP), which describes how it wants to communicate.
+2.  **Backend Creates Call:** The client sends this SDP offer to our backend API route (`/api/openai-call`). The backend securely forwards this offer to OpenAI's `POST /v1/realtime/calls` endpoint.
+3.  **OpenAI Returns Answer:** OpenAI's server processes the offer and returns an SDP "answer".
+4.  **Peer Connection Established:** The backend passes this answer back to the client. The client uses the answer to establish a direct, peer-to-peer WebRTC connection with OpenAI's media servers for low-latency, bi-directional audio streaming.
+5.  **Conversation:** The user's microphone audio is sent over this WebRTC connection, and the AI's audio response is received on the same connection.
 
 ---
 
@@ -289,65 +299,32 @@ interface AppState {
 - `agent.speak_started` - Avatar began speaking
 - `agent.speak_ended` - Avatar finished speaking
 
-### OpenAI Realtime API Integration
+### OpenAI Realtime API Integration (WebRTC)
 
-#### Connection Setup
+The integration uses WebRTC for low-latency, bi-directional audio streaming. It does **not** use a simple WebSocket connection for the audio data.
 
-**WebSocket Connection:**
-```
-wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview
-```
+#### Connection Handshake
 
-**Authentication:**
-```
-Authorization: Bearer YOUR_OPENAI_API_KEY
-OpenAI-Beta: realtime=v1
-```
+**Endpoint:** `POST /v1/realtime/calls`
 
-**Security Note - Token Management:**
+**Backend Proxy:** Direct calls to this endpoint cannot be made from the browser due to CORS and the need to keep the API key secret. A backend route (`/api/openai-call`) is used to proxy requests.
 
-The OpenAI Realtime API requires a WebSocket connection that typically connects directly from the client browser. This presents a security challenge since API keys should never be exposed client-side.
-
-**Recommended Approach (Secure):**
-Create a Next.js API route (`/api/get-openai-token`) that generates a temporary or scoped token for the client to use. This keeps your OpenAI API key secure on the server.
-
-**Prototype Approach (Acceptable for Local Development):**
-For initial prototype development, it is acceptable to use the API key directly from environment variables on the client side, with the understanding that:
-- This is **NOT suitable for production**
-- The key should only be used in local development
-- Never commit `.env.local` to version control
-- Consider this technical debt to be addressed before any deployment
-
-The implementation section should prioritize the secure approach but acknowledge the prototype shortcut for rapid development.
-
-#### Configuration
-
-**Session Configuration:**
-```json
-{
-  "type": "session.update",
-  "session": {
-    "modalities": ["text", "audio"],
-    "instructions": "<system prompt from config>",
-    "voice": "<voice from config>",
-    "input_audio_format": "pcm16",
-    "output_audio_format": "pcm16",
-    "input_audio_transcription": {
-      "model": "whisper-1"
-    },
-    "turn_detection": {
-      "type": "server_vad"
-    }
-  }
-}
-```
+**Request Flow:**
+1.  **Client:** Creates an `RTCPeerConnection` and generates an SDP offer.
+2.  **Client to Backend:** `POST`s the SDP offer to `/api/openai-call`.
+3.  **Backend to OpenAI:** Makes a `multipart/form-data` `POST` request to `https://api.openai.com/v1/realtime/calls`. The request body contains:
+    *   `sdp`: The SDP offer from the client.
+    *   `session`: A JSON string containing the session configuration (e.g., `{ "model": "...", "instructions": "..." }`).
+4.  **OpenAI to Backend:** OpenAI responds with a JSON object containing the SDP `answer`.
+5.  **Backend to Client:** The backend returns the SDP answer to the client.
+6.  **Client:** Uses the SDP answer to complete the `RTCPeerConnection` handshake, establishing a direct media stream with OpenAI's servers.
 
 #### Real-time Flow
 
-1. **User Audio Input** → OpenAI Realtime API (automatic VAD)
-2. **OpenAI processes** → Returns text transcript + audio response
-3. **Audio forwarded** → HeyGen WebSocket (`agent.speak` event)
-4. **Avatar speaks** → User sees/hears response
+1.  **User Audio Input** → Sent via the established WebRTC audio track.
+2.  **OpenAI processes** → Returns text transcript and AI audio response via the WebRTC connection.
+3.  **Client receives AI audio** → Forwards AI audio to the HeyGen WebSocket for lip-sync.
+4.  **Avatar speaks** → User sees/hears response.
 
 ---
 
@@ -384,42 +361,35 @@ The implementation section should prioritize the secure approach but acknowledge
 avatar-demo/
 ├── app/
 │   ├── api/
-│   │   ├── start-session/
-│   │   │   └── route.ts          # Create HeyGen session
-│   │   ├── stop-session/
-│   │   │   └── route.ts          # End HeyGen session
-│   │   └── keep-session-alive/
-│   │       └── route.ts          # Session keep-alive ping
+│   │   ├── heygen-session/
+│   │   │   └── route.ts          # Create HeyGen session token
+│   │   └── openai-call/
+│   │       └── route.ts          # Proxy to OpenAI /v1/realtime/calls
 │   ├── page.tsx                  # Main page (entry point)
-│   ├── layout.tsx                # Root layout
-│   └── globals.css               # Global styles (dark mode)
-├── src/
-│   ├── components/
-│   │   ├── KaiAvatar.tsx         # Main avatar component
-│   │   ├── AvatarVideo.tsx       # Video display component
-│   │   ├── ChatHistory.tsx       # Conversation transcript
-│   │   ├── TextInput.tsx         # Text chat input
-│   │   └── ControlPanel.tsx      # Mute/Interrupt/Stop buttons
-│   ├── lib/
-│   │   ├── heygen/
-│   │   │   ├── session.ts        # HeyGen session management
-│   │   │   └── websocket.ts      # HeyGen WebSocket handler
-│   │   ├── openai/
-│   │   │   ├── realtime.ts       # OpenAI Realtime API client
-│   │   │   └── audio.ts          # Audio processing utilities
-│   │   └── hooks/
-│   │       ├── useKaiSession.ts  # Main session hook
-│   │       ├── useVoiceInput.ts  # Voice capture hook
-│   │       └── useChatHistory.ts # Chat history management
-│   └── config/
-│       └── avatar.config.ts      # Avatar configuration file
+│   └── ...                       # Other Next.js files
+├── components/
+│   ├── AvatarVideo.tsx           # Video display component
+│   ├── ChatHistory.tsx           # Conversation transcript
+│   ├── ControlPanel.tsx          # Mute/Interrupt/Stop buttons
+│   ├── LandingPage.tsx           # Initial start page
+│   └── TextInput.tsx             # Text chat input
+├── lib/
+│   ├── heygen/
+│   │   └── session.ts            # HeyGen session management
+│   ├── openai/
+│   │   ├── webrtc.ts             # WebRTC client for OpenAI
+│   │   └── audio.ts              # Audio processing utilities
+│   └── hooks/
+│       ├── useHeygenSession.ts   # Manages HeyGen connection
+│       ├── useMicrophone.ts      # Captures user audio
+│       ├── useOpenAI.ts          # Manages OpenAI WebRTC connection
+│       └── useKaiSession.ts      # Main orchestration hook
+├── config/
+│   └── avatar.config.ts          # Avatar configuration file
 ├── .env.local                    # Environment variables (gitignored)
 ├── .env.example                  # Example env file (committed)
 ├── package.json
-├── tsconfig.json
-├── next.config.js
-├── tailwind.config.ts
-└── README.md                     # Setup instructions
+└── ...                           # Other project files
 ```
 
 ---

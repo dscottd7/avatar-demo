@@ -691,555 +691,103 @@ git push origin feature/heygen-websocket
 
 ---
 
-### Phase 5: OpenAI Realtime API Integration (Prototype Approach)
+### Phase 5: OpenAI WebRTC Integration
 
-**Branch:** `feature/openai-realtime-prototype`
+**Branch:** `feature/openai-webrtc`
 
-**Note:** This phase uses client-side API key for rapid prototyping. Security improvements in Phase 6.
-
-#### Tasks
-
-1. **Create OpenAI Realtime Client**
-   - File: `lib/openai/realtime.ts`
-   - WebSocket connection to OpenAI
-   - Session configuration with avatar config
-   - Event handlers (conversation.item.created, response.audio.delta, etc.)
-   - Audio streaming management
-
-2. **Create Audio Utilities**
-   - File: `lib/openai/audio.ts`
-   - Audio format conversion (PCM handling)
-   - Base64 encoding/decoding
-   - Audio chunking for HeyGen
-
-3. **Create Custom Hook - useOpenAIRealtime**
-   - File: `lib/hooks/useOpenAIRealtime.ts`
-   - Initialize OpenAI connection
-   - Handle user audio input
-   - Process responses
-   - Forward audio to HeyGen
-
-4. **Implement Microphone Access**
-   - File: `lib/hooks/useMicrophone.ts`
-   - Request microphone permission
-   - Capture user audio
-   - Mute/unmute functionality
-   - Send audio to OpenAI
-
-5. **Create Integration Hook**
-   - File: `lib/hooks/useKaiSession.ts`
-   - Orchestrate HeyGen + OpenAI
-   - Manage conversation flow
-   - Handle errors across both services
-
-6. **Update Main Page**
-   - Initialize OpenAI connection on session start
-   - Connect microphone to OpenAI
-   - Display connection status
-
-7. **Update Chat History**
-   - Show transcript from OpenAI
-   - Display user input and AI responses
-
-#### Tests
-
-**Audio Processing Tests:**
-
-```typescript
-// lib/openai/__tests__/audio.test.ts
-describe('Audio Utilities', () => {
-  it('converts audio to Base64 PCM format', () => {
-    // Test audio conversion
-  })
-
-  it('chunks audio correctly for streaming', () => {
-    // Test chunking
-  })
-})
-```
-
-**Manual Testing:**
-- [ ] Microphone permission requested
-- [ ] User can speak and audio is captured
-- [ ] OpenAI receives audio and processes it
-- [ ] Transcript appears in chat history
-- [ ] AI response audio received
-- [ ] Audio forwarded to HeyGen
-- [ ] Avatar lip-syncs to response
-- [ ] Conversation flows naturally
-- [ ] Mute button stops audio capture
-- [ ] No audio feedback loops
-
-**End-to-End Testing:**
-- [ ] User speaks → Avatar responds (full cycle)
-- [ ] Multiple conversation turns work
-- [ ] Text input also works
-- [ ] Both HeyGen and OpenAI connections stable
-
-#### Code Review Checkpoint
-
-**Self-Review Checklist:**
-- [ ] **SECURITY WARNING documented** (client-side API key)
-- [ ] Microphone access properly released on unmount
-- [ ] Audio streams cleaned up properly
-- [ ] OpenAI WebSocket closes on session end
-- [ ] Error handling for both services
-- [ ] Zustand store updated with all states
-- [ ] TypeScript types for OpenAI events
-
-#### Commit & Push
-
-```bash
-git add .
-git commit -m "feat: Integrate OpenAI Realtime API (prototype approach)
-
-⚠️  SECURITY NOTE: This implementation uses client-side API key
-for rapid prototyping. NOT suitable for production. See Phase 6.
-
-- Create OpenAI Realtime WebSocket client
-- Implement audio capture and processing
-- Create useMicrophone hook for audio input
-- Create useOpenAIRealtime hook for API integration
-- Create useKaiSession orchestration hook
-- Connect microphone to OpenAI for voice input
-- Forward OpenAI audio responses to HeyGen
-- Display conversation transcript in chat history
-- Implement mute functionality"
-
-git push origin feature/openai-realtime-prototype
-```
-
-#### Create Pull Request
-
-- Open PR: `feature/openai-realtime-prototype` → `main`
-- **Add security warning in PR description**
-- Test full conversation flow before merging
-- Merge after review
-- Delete branch and pull latest main
-
----
-
-### Phase 6: Security Enhancement - OpenAI Token Server
-
-**Branch:** `feature/openai-token-server`
-
-**Note:** This phase adds proper API key security by generating tokens server-side.
+**Note:** This is a major architectural change. This phase replaces the old WebSocket-based approach with the correct WebRTC implementation required by the OpenAI Realtime API. This new architecture is inherently secure, making the old "Phase 6" obsolete.
 
 #### Tasks
 
-1. **Create OpenAI Token API Route**
-   - File: `app/api/get-openai-token/route.ts`
-   - Generate ephemeral token for client
-   - Set token expiration
-   - Return scoped token to client
+1.  **Rename and Update Backend API Route**
+    -   Rename `app/api/openai-token/` to `app/api/openai-call/`.
+    -   Update the route to accept a `POST` request with a JSON body containing an `sdp` offer string.
+    -   It will then make a `multipart/form-data` request to OpenAI's `POST /v1/realtime/calls` endpoint.
+    -   The `sdp` offer and the session configuration (`model`, `instructions`) will be sent in this request.
+    -   It will parse the SDP `answer` from OpenAI's response and return it to the client.
 
-2. **Research OpenAI Token Generation**
-   - Investigate OpenAI's token API (if available)
-   - Alternative: Implement session-based token proxy
-   - Document approach in code comments
+2.  **Create WebRTC Client**
+    -   Create a new `lib/openai/webrtc.ts` file.
+    -   This file will contain a class or set of functions to manage the `RTCPeerConnection`.
+    -   Responsibilities:
+        -   Creating and configuring the `RTCPeerConnection`.
+        -   Handling ICE candidate events (`onicecandidate`).
+        -   Creating the initial SDP offer (`createOffer`).
+        -   Setting the local and remote SDP descriptions (`setLocalDescription`, `setRemoteDescription`).
+        -   Managing audio tracks for sending microphone data and receiving AI responses.
 
-3. **Update OpenAI Realtime Client**
-   - File: `lib/openai/realtime.ts`
-   - Request token from `/api/get-openai-token`
-   - Use token instead of API key
-   - Handle token expiration and refresh
+3.  **Update `useOpenAIRealtime` Hook**
+    -   Rename to `useOpenAIWebRTC.ts` for clarity.
+    -   Remove all old WebSocket logic.
+    -   Use the new WebRTC client from `webrtc.ts`.
+    -   Orchestrate the handshake:
+        1.  Create the WebRTC client.
+        2.  Generate the SDP offer.
+        3.  `POST` the offer to `/api/openai-call`.
+        4.  Receive the SDP answer and set it on the peer connection.
+    -   Handle incoming audio tracks from the peer connection.
 
-4. **Update Environment Variables**
-   - Move OpenAI key to server-side only
-   - Update `.env.example` with notes
-   - Update documentation
+4.  **Update `useKaiSession` Hook**
+    -   Integrate the new `useOpenAIWebRTC` hook.
+    -   The `onAudioData` from the microphone now needs to be routed to the outgoing WebRTC audio track.
+    -   The incoming AI audio track from the WebRTC connection needs to be routed to the `useHeygenSession` hook's `repeatAudio` function.
 
-5. **Remove Client-Side Key Usage**
-   - Remove any client-side API key references
-   - Verify key not exposed in browser
-
-#### Tests
-
-**API Route Testing:**
-
-```bash
-# Test token generation
-curl http://localhost:3000/api/get-openai-token
-
-# Expected: Returns temporary token (not full API key)
-```
-
-**Security Testing:**
-- [ ] API key not visible in browser DevTools
-- [ ] API key not in client-side bundle (check network tab)
-- [ ] Token has reasonable expiration
-- [ ] Token refresh works when expired
-- [ ] Invalid tokens handled gracefully
-
-#### Code Review Checkpoint
-
-**Self-Review Checklist:**
-- [ ] API key only in `.env.local` (server-side)
-- [ ] No API key in client code
-- [ ] Token expiration handled
-- [ ] Error messages don't leak sensitive info
-- [ ] Security improvement documented
-
-#### Commit & Push
-
-```bash
-git add .
-git commit -m "feat: Implement secure OpenAI token generation
-
-✅ SECURITY IMPROVEMENT: API key now server-side only
-
-- Create /api/get-openai-token endpoint
-- Generate ephemeral tokens for client use
-- Update OpenAI client to use token-based auth
-- Remove API key from client-side code
-- Add token refresh logic
-- Update environment variable documentation"
-
-git push origin feature/openai-token-server
-```
-
-#### Create Pull Request
-
-- Open PR: `feature/openai-token-server` → `main`
-- Highlight security improvements
-- Merge after review
-- Delete branch and pull latest main
-
----
-
-### Phase 7: Text Chat Feature
-
-**Branch:** `feature/text-chat`
-
-#### Tasks
-
-1. **Create Text Message Handler**
-   - File: `lib/hooks/useTextChat.ts`
-   - Send text to OpenAI
-   - Receive text response
-   - Update chat history
-
-2. **Update Text Input Component**
-   - Connect send button to handler
-   - Show loading state while processing
-   - Clear input after send
-   - Handle Enter key press
-
-3. **Integrate Text with Voice Flow**
-   - Text responses trigger avatar speech
-   - Text and voice share same conversation history
-   - Audio still forwarded to HeyGen
-
-4. **Add Input Validation**
-   - Prevent empty messages
-   - Trim whitespace
-   - Max message length
+5.  **Update `useMicrophone` Hook**
+    -   Ensure the audio stream provided by the microphone is compatible with being added to a WebRTC track. (The current implementation should be fine).
 
 #### Tests
 
 **Manual Testing:**
-- [ ] Type message and click send
-- [ ] Message appears in chat history
-- [ ] Avatar speaks the response
-- [ ] Enter key sends message
-- [ ] Empty messages prevented
-- [ ] Input clears after send
-- [ ] Loading state displays
-- [ ] Works alongside voice input
+- [ ] `POST` to `/api/openai-call` successfully returns an SDP answer.
+- [ ] `RTCPeerConnection` state changes to `connected`.
+- [ ] Audio from the microphone is successfully sent over the peer connection.
+- [ ] Audio is received from OpenAI on the remote track.
+- [ ] Avatar lip-syncs to the audio received from OpenAI.
 
-#### Code Review Checkpoint
-
-**Self-Review Checklist:**
-- [ ] Text and voice don't conflict
-- [ ] Input validation works
-- [ ] Proper TypeScript types
-- [ ] Accessible (keyboard navigation)
-
-#### Commit & Push
-
-```bash
-git add .
-git commit -m "feat: Implement text chat functionality
-
-- Create text message handler hook
-- Connect text input to OpenAI
-- Display text messages in chat history
-- Avatar speaks text responses
-- Add input validation and loading states
-- Support Enter key to send
-- Integrate with existing voice conversation flow"
-
-git push origin feature/text-chat
-```
-
-#### Create Pull Request
-
-- Open PR: `feature/text-chat` → `main`
-- Merge after review
-- Delete branch and pull latest main
+**Integration Tests (Mocks Required):**
+- [ ] Test that the `useOpenAIWebRTC` hook correctly performs the offer/answer handshake.
+- [ ] Test the `useKaiSession` hook to ensure it correctly routes audio between the microphone, WebRTC, and HeyGen hooks.
 
 ---
 
-### Phase 8: Control Features & Polish
+### Phase 6: Text Chat & Control Features (Consolidated)
 
-**Branch:** `feature/controls-polish`
+**Branch:** `feature/controls-and-text-chat`
 
 #### Tasks
 
-1. **Implement Mute Functionality**
-   - Connect mute button to microphone
-   - Visual indicator for mute state
-   - Persist mute state in Zustand
+1.  **Implement Text Chat**
+    -   Determine how to send text input. **Assumption:** The best approach is to use a Text-to-Speech (TTS) service (like OpenAI's `v1/audio/speech` API, or a browser-based one) to convert the text to audio, then send that audio through the existing WebRTC connection. This keeps the data flow consistent.
+    -   Create a new API route or client-side logic to handle the TTS conversion.
+    -   Update the `TextInput` component to use this new logic.
 
-2. **Implement Interrupt Functionality**
-   - Send HeyGen interrupt event
-   - Stop avatar speaking
-   - Clear pending audio
-
-3. **Implement Stop Session**
-   - Close HeyGen WebSocket
-   - Close OpenAI WebSocket
-   - Release microphone
-   - Clear conversation history
-   - Return to landing page
-
-4. **Add Session Keep-Alive**
-   - Timer to send keep-alive every 4 minutes
-   - Clean up timer on session end
-
-5. **Improve Error Handling**
-   - User-friendly error messages
-   - Retry logic for transient failures
-   - Fallback UI for errors
-
-6. **Add Loading States**
-   - Loading spinner during session start
-   - Connection status indicators
-   - Smooth transitions
-
-7. **UI Polish**
-   - Button hover states
-   - Smooth animations
-   - Focus states for accessibility
-   - Consistent spacing
+2.  **Integrate Control Features**
+    -   Wire up the `Mute` button in `ControlPanel` to the `useMicrophone` hook's `toggleMute` function.
+    -   Wire up the `Interrupt` button to the `interrupt` functions on both the OpenAI and HeyGen hooks.
+    -   Ensure the `Stop` button correctly tears down the WebRTC connection in addition to the HeyGen session.
 
 #### Tests
 
-**Control Testing:**
-- [ ] Mute button toggles microphone
-- [ ] Mute indicator shows correct state
-- [ ] Interrupt stops avatar mid-sentence
-- [ ] Stop ends session completely
-- [ ] Session keep-alive prevents timeout
-- [ ] Error messages display correctly
-- [ ] Loading states appear during operations
-
-**Accessibility Testing:**
-- [ ] Tab navigation works
-- [ ] Focus visible on all controls
-- [ ] Screen reader friendly (use WAVE or axe DevTools)
-
-#### Code Review Checkpoint
-
-**Self-Review Checklist:**
-- [ ] All controls functional
-- [ ] Error handling comprehensive
-- [ ] No memory leaks
-- [ ] Timers cleaned up
-- [ ] Accessibility standards met
-- [ ] UI polish consistent
-
-#### Commit & Push
-
-```bash
-git add .
-git commit -m "feat: Implement control features and UI polish
-
-- Wire up mute button to microphone control
-- Implement avatar interrupt functionality
-- Implement stop session with full cleanup
-- Add session keep-alive timer (4 min interval)
-- Improve error handling with user-friendly messages
-- Add loading states and connection indicators
-- Polish UI with animations and transitions
-- Improve accessibility (keyboard nav, focus states)"
-
-git push origin feature/controls-polish
-```
-
-#### Create Pull Request
-
-- Open PR: `feature/controls-polish` → `main`
-- Merge after review
-- Delete branch and pull latest main
+- [ ] Typing a message results in the avatar speaking the response.
+- [ ] Mute button correctly stops audio from being sent to OpenAI.
+- [ ] Interrupt button stops both the user's audio processing and the avatar's speech.
+- [ ] Stop button cleanly closes all connections and resets the UI.
 
 ---
 
-### Phase 9: Testing & Bug Fixes
+### Phase 7: Final Testing & Bug Fixes (Renumbered)
 
-**Branch:** `bugfix/testing-improvements`
+**Branch:** `bugfix/final-testing`
 
-#### Tasks
-
-1. **Comprehensive Manual Testing**
-   - Test all user flows end-to-end
-   - Test error scenarios
-   - Test edge cases
-   - Document bugs in GitHub Issues
-
-2. **Fix Critical Bugs**
-   - Address any blocking issues
-   - Fix connection stability problems
-   - Resolve audio/video sync issues
-
-3. **Add Integration Tests**
-   - File: `__tests__/integration/conversation-flow.test.ts`
-   - Test full conversation cycle
-   - Test session lifecycle
-
-4. **Performance Testing**
-   - Check for memory leaks (Chrome DevTools)
-   - Verify audio/video performance
-   - Optimize bundle size if needed
-
-5. **Browser Compatibility Testing**
-   - Test in Chrome (primary)
-   - Test in Firefox
-   - Test in Safari (if available)
-   - Document any issues
-
-#### Test Scenarios
-
-**Happy Path:**
-- [ ] Start session → Voice conversation → Text message → Stop session
-- [ ] Multiple conversation turns without errors
-- [ ] 5+ minute conversation (test keep-alive)
-
-**Error Scenarios:**
-- [ ] Invalid API keys (expect clear error)
-- [ ] Network disconnection (expect reconnect or error)
-- [ ] Microphone denied (expect fallback to text)
-- [ ] Session timeout (expect graceful handling)
-
-**Edge Cases:**
-- [ ] Rapid button clicking (mute/unmute)
-- [ ] Send empty text message (should be prevented)
-- [ ] Interrupt while not speaking (should be harmless)
-- [ ] Multiple interrupts in quick succession
-
-#### Code Review Checkpoint
-
-**Self-Review Checklist:**
-- [ ] All critical bugs fixed
-- [ ] Tests passing
-- [ ] No console errors
-- [ ] Performance acceptable
-- [ ] Browser compatibility documented
-
-#### Commit & Push
-
-```bash
-git add .
-git commit -m "fix: Address bugs and improve testing
-
-- Fix [specific bug 1]
-- Fix [specific bug 2]
-- Add integration tests for conversation flow
-- Improve error handling for edge cases
-- Optimize performance (reduce bundle size)
-- Test browser compatibility
-- Document known issues"
-
-git push origin bugfix/testing-improvements
-```
-
-#### Create Pull Request
-
-- Open PR: `bugfix/testing-improvements` → `main`
-- Merge after review
-- Delete branch and pull latest main
+(Tasks remain the same as the original Phase 9)
 
 ---
 
-### Phase 10: Documentation & README
+### Phase 8: Documentation & README (Renumbered)
 
 **Branch:** `docs/final-documentation`
 
-#### Tasks
-
-1. **Create Comprehensive README.md**
-   - Project description
-   - Features list
-   - Prerequisites
-   - Installation instructions
-   - Configuration guide
-   - Usage instructions
-   - Troubleshooting section
-   - Known issues
-   - Future enhancements
-
-2. **Update Code Documentation**
-   - JSDoc comments for complex functions
-   - README files for major directories
-   - Inline comments for tricky logic
-
-3. **Create Setup Guide**
-   - File: `SETUP.md`
-   - Step-by-step setup for new developers
-   - API key acquisition instructions
-   - Common setup problems
-
-4. **Create Architecture Documentation**
-   - File: `ARCHITECTURE.md`
-   - System diagram
-   - Data flow explanation
-   - State management overview
-   - WebSocket communication flow
-
-5. **Update spec.md**
-   - Mark completed features
-   - Update "Future Enhancements" with learnings
-   - Add "Lessons Learned" section
-
-#### Documentation Checklist
-
-- [ ] README.md is clear and complete
-- [ ] All setup steps documented
-- [ ] Code comments added where helpful
-- [ ] Architecture explained
-- [ ] Known issues listed
-- [ ] Contributing guidelines (if open source)
-
-#### Code Review Checkpoint
-
-**Self-Review Checklist:**
-- [ ] Documentation accurate
-- [ ] Examples working
-- [ ] Links valid
-- [ ] Formatting consistent (markdown)
-- [ ] No typos
-
-#### Commit & Push
-
-```bash
-git add .
-git commit -m "docs: Add comprehensive project documentation
-
-- Create detailed README with setup instructions
-- Add SETUP.md guide for new developers
-- Create ARCHITECTURE.md with system diagrams
-- Add code comments and JSDoc documentation
-- Update spec.md with completed features
-- Document known issues and troubleshooting"
-
-git push origin docs/final-documentation
-```
-
-#### Create Pull Request
-
-- Open PR: `docs/final-documentation` → `main`
-- Merge after review
-- Delete branch and pull latest main
+(Tasks remain the same as the original Phase 10)
 
 ---
 

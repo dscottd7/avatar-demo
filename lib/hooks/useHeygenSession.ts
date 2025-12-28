@@ -15,6 +15,7 @@ interface UseHeygenSessionReturn {
   startSession: () => Promise<void>;
   stopSession: () => Promise<void>;
   speak: (text: string) => void;
+  sendAudioToAvatar: (audioChunk: string) => void;
   interrupt: () => void;
   attachVideo: (videoElement: HTMLVideoElement) => void;
   isStreamReady: boolean;
@@ -199,6 +200,19 @@ export function useHeygenSession(): UseHeygenSessionReturn {
     }
   }, []);
 
+  const sendAudioToAvatar = useCallback((audioChunk: string) => {
+    if (!sessionRef.current) {
+      console.error('[LiveAvatar] Cannot send audio: session not initialized');
+      return;
+    }
+
+    try {
+      sessionRef.current.repeatAudio(audioChunk);
+    } catch (err) {
+      console.error('[LiveAvatar] Error sending audio chunk:', err);
+    }
+  }, []);
+
   const interrupt = useCallback(() => {
     if (sessionRef.current) {
       sessionRef.current.interrupt();
@@ -261,6 +275,7 @@ export function useHeygenSession(): UseHeygenSessionReturn {
     startSession,
     stopSession,
     speak,
+    sendAudioToAvatar,
     interrupt,
     attachVideo,
     isStreamReady,

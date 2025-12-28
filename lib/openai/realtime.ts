@@ -21,7 +21,6 @@ import {
 export type RealtimeEventHandler = (event: RealtimeServerEvent) => void;
 
 export interface RealtimeClientConfig {
-  apiKey: string;
   model?: string;
   sessionConfig?: Partial<SessionConfig>;
   onOpen?: () => void;
@@ -46,33 +45,32 @@ export class OpenAIRealtimeClient {
    * Connect to OpenAI Realtime API
    */
   async connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
-        const model = this.config.model || 'gpt-4o-realtime-preview-2024-12-17';
+        // Fetch the secure session token from our backend API route
+        const response = await fetch('/api/openai-token', { method: 'POST' });
+        const sessionData = await response.json();
 
-        // Browser WebSocket doesn't support custom headers (Authorization: Bearer)
-        // WORKAROUND for Phase 5: Pass API key as query parameter
-        // ⚠️ This is less secure but works for prototyping
-        // Phase 6 will use ephemeral tokens from /v1/realtime/sessions endpoint
-        const url = `wss://api.openai.com/v1/realtime?model=${model}`;
+        if (!sessionData.success) {
+          throw new Error(sessionData.message || 'Failed to get OpenAI session token');
+        }
 
-        console.log('[OpenAI] Connecting to Realtime API...');
-        console.log('[OpenAI] Model:', model);
+        const { id: sessionId, client_secret } = sessionData.data;
+        const clientSecretValue = client_secret?.value;
 
-        // Use WebSocket subprotocol for authentication
-        // The API key is passed in the second protocol parameter
-        // Format: openai-insecure-api-key.{YOUR_API_KEY}
-        this.ws = new WebSocket(url, ['realtime', `openai-insecure-api-key.${this.config.apiKey.trim()}`]);
+        if (!clientSecretValue) {
+          throw new Error('Client secret not found in OpenAI session response');
+        }
+
+        // Connect using the secure session credentials
+        const url = `wss://api.openai.com/v1/realtime/sessions/${sessionId}/connect?client_secret=${clientSecretValue}`;
+
+        console.log('[OpenAI] Connecting to Realtime API with secure session...');
+        this.ws = new WebSocket(url, ['realtime']);
 
         this.ws.onopen = () => {
           console.log('[OpenAI] Connected to Realtime API');
           this.reconnectAttempts = 0;
-
-          // Send session configuration if provided
-          if (this.config.sessionConfig) {
-            this.updateSession(this.config.sessionConfig);
-          }
-
           this.config.onOpen?.();
           resolve();
         };
@@ -81,7 +79,6 @@ export class OpenAIRealtimeClient {
           try {
             const serverEvent = JSON.parse(event.data) as RealtimeServerEvent;
 
-            // Log all events for debugging Phase 5
             if (serverEvent.type === ServerEventType.ERROR) {
               console.error('[OpenAI] Error event received:', JSON.stringify(serverEvent, null, 2));
             } else {
@@ -96,7 +93,7 @@ export class OpenAIRealtimeClient {
 
         this.ws.onerror = (event) => {
           console.error('[OpenAI] WebSocket error:', event);
-          const error = new Error('WebSocket connection error - check API key and network');
+          const error = new Error('WebSocket connection error');
           this.config.onError?.(error);
           reject(error);
         };
@@ -110,13 +107,13 @@ export class OpenAIRealtimeClient {
           this.ws = null;
           this.config.onClose?.();
 
-          // Attempt reconnection if not a normal closure
-          if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.attemptReconnect();
-          }
+          // Do not attempt to reconnect automatically for this prototype
+          // if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
+          //   this.attemptReconnect();
+          // }
         };
       } catch (error) {
-        console.error('[OpenAI] Error creating WebSocket:', error);
+        console.error('[OpenAI] Error creating WebSocket connection:', error);
         reject(error);
       }
     });
